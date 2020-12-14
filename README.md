@@ -28,9 +28,9 @@ and developer tenure and experience were not
 found to be significantly correlated with line or token longevity,
 while project size and project age showed only a slight correlation.
 
-The following tools are included in this repository.
+The following sections describe the tools included in this repository.
 
-## `lifetime.pl`
+## lifetime
 The _lifetime_ tool parses the output of successive _git diff_ runs and,
 for every changed or deleted line, outputs a record containing the timestamps
 of the line's creation and deletion.
@@ -91,7 +91,7 @@ arguments.
 -t      Show tokens with lifetime
 ```
 
-## `daglp.cpp`
+## daglp
 The _daglp_ program simplifies Git commit history into a linear graph
 with the most commits, using a [graph longest path algorithm](https://en.wikipedia.org/wiki/Longest_path_problem#Acyclic_graphs_and_critical_paths).
 Given as input a topologically sorted list of each commit's parents,
@@ -112,7 +112,7 @@ d8e85967adc0b188a49117b5db4f10cc6c7c36cb 1370688578
 a0759fa8d6838170e4b693d26d6edb5e0463c1d0 1370689181
 ```
 
-## `difflog.sh`
+## difflog
 The _difflog_ tool produces a Git repository's log of changes
 in unified diff format
 This is the equivalent of running, as required by the _lifetime_ tool.
@@ -124,17 +124,17 @@ git -c diff.renameLimit=30000 log -m -M -C --pretty=tformat:'commit %H %at' --to
 However, the former command [has been known to produce incorrect results](http://stackoverflow.com/questions/38839595/how-can-i-obtain-with-git-log-a-series-of-patches-that-can-be-auto-applied), which _difflog_ corrects.
 Any command line options are passed as arguments to _git diff_.
 
-## `tokenize.pl`
+## tokenize
 The _tokenize_ tool is used to convert the source code commits of a Git
 repository into equivalent ones containing one token per line, as e.g. proposed
-by [cregit](https://github.com/cregit/cregit) and immplemented
-on the Linux kernel](https://github.com/dmgerman/linux-token-bfg).
+by [cregit](https://github.com/cregit/cregit) and
+[used on the Linux kernel](https://github.com/dmgerman/linux-token-bfg).
 The new repository can then be used for performing token-level diffs.
 
 The tool supports code written in Java, C, C#, C++, PHP, and Python,
 as recognized by each file's suffix.
 The tool expects the separate
-[tokenizer] (https://github.com/dspinellis/tokenizer) tool to be installed
+[tokenizer](https://github.com/dspinellis/tokenizer) tool to be installed
 and available in its execution path.
 It is invoked with a Git repository directory and branch name as
 argument.
@@ -150,7 +150,7 @@ followed by the actual token.
 ```
 $ git init tokenized-repo
 $ tokenize.pl repo main  | (cd tokenized-repo ; git fast-import)
-```
+
 /usr/lib/git-core/git-fast-import statistics:
 ---------------------------------------------------------------------
 Alloc'd objects:       5000
