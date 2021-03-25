@@ -1,6 +1,5 @@
 /*
- *
- * Copyright 1996-2000 Diomidis Spinellis
+ * Copyright 1996-2021 Diomidis Spinellis
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +20,7 @@
  * See https://en.wikipedia.org/wiki/Longest_path_problem#Acyclic_graphs_and_critical_paths
  * The input should come from
  * git log --topo-order --pretty=format:'%H %at %P'
- * The output is "SHA timestamp" lines.
+ * The output is "SHA identifier" lines.
  *
  */
 
@@ -38,16 +37,14 @@ using namespace std;
 
 static bool debug = false;
 
-typedef unsigned long Timestamp;
-
 class Vertex {
 public:
 	string name;
 	int maxLength;			// Longest path ending here
-	Timestamp timestamp;		// Author or commit time
+	string identifier;		// Author/commit time, or SHA, bug ids
 	vector <Vertex *> edges;
 	Vertex *lpFrom;			// The from vertex of the longest path
-	Vertex(const string &n, Timestamp ts) : name(n), timestamp(ts),
+	Vertex(const string &n, string id) : name(n), identifier(id),
 		maxLength(-1) {}
 	void add_edge(Vertex *to) {
 		edges.push_back(to);
@@ -62,16 +59,16 @@ VertexMap vertices;
  * The node is added to the map if it is not there.
  */
 static Vertex *
-get_vertex(const string &name, Timestamp ts)
+get_vertex(const string &name, string id)
 {
 	VertexMap::const_iterator ni = vertices.find(name);
 	if (ni == vertices.end()) {
-		Vertex *v = new Vertex(name, ts);
+		Vertex *v = new Vertex(name, id);
 		vertices.insert(VertexMap::value_type(name, v));
 		return v;
 	} else {
-		if (ts != -1)
-			ni->second->timestamp = ts;
+		if (id.length() != 0)
+			ni->second->identifier = id;
 		return ni->second;
 	}
 }
@@ -123,7 +120,10 @@ main(int argc, char *argv[])
 
 	/*
 	 * Read the graph, which should come out of
-	 * git log --topo-order --pretty=format:'%H %at %P'
+	 * git log --topo-order --pretty=format:'%H identifier %P'
+	 * The identifier can be any element of the commit that is
+	 * to be tracked across versions, such as its timestamp (%at)
+	 * its identifier (%H) or issues addressed in it.
 	 */
 	while (getline(*in, line)) {
 		istringstream iss(line);
@@ -131,9 +131,9 @@ main(int argc, char *argv[])
 		// Read node v adding it to the map if needed
 		string nodeName;
 		iss >> nodeName;
-		long ts;
-		iss >> ts;
-		Vertex *v = get_vertex(nodeName, ts);
+		string id;
+		iss >> id;
+		Vertex *v = get_vertex(nodeName, id);
 
 		if (end == NULL)
 			end = v;
@@ -143,7 +143,7 @@ main(int argc, char *argv[])
 		while (iss >> parentName) {
 			if (debug)
 				cerr << parentName << " parent of " << nodeName << endl;
-			v->add_edge(get_vertex(parentName, -1));
+			v->add_edge(get_vertex(parentName, ""));
 		}
 	}
 
@@ -169,6 +169,6 @@ main(int argc, char *argv[])
 
 	// Display the longest path
 	for (Vertex *v = start; v; v = v->lpFrom)
-		cout << v->name << ' ' << v->timestamp << endl;
+		cout << v->name << ' ' << v->identifier << endl;
 	return 0;
 }

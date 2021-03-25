@@ -99,7 +99,7 @@ it will output the longest path of the directed acyclic graph from the
 beginning (the oldest commit) to the end (the newest one).
 The input is expected to come from a command such as
 `git log --topo-order --pretty=format:'%H %at %P'`.
-The output is a set of "SHA timestamp" lines.
+The output is a set of "SHA identifier" lines.
 
 ### Example run
 
