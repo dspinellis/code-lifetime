@@ -1,9 +1,14 @@
 # Tools for tracking the lifetime of code lines and tokens
 The tools in this repository allow the precise tracking of when a specific
 code line or token is modified or removed.
-The have been used for conducting the studies described in the paper titled
-"Software evolution: The lifetime of fine-grained elements".
-_PeerJ Computer Science_, 2021 (to appear).
+They have been used for conducting the studies described in the
+following paper.
+
+Diomidis Spinellis, Panos Louridas, and Maria Kechagia.
+Software evolution: The lifetime of fine-grained elements.
+_PeerJ Computer Science_, 7:e372, February 2021.
+[doi:10.7717/peerj-cs.372](https://dx.doi.org/10.7717/peerj-cs.372)
+
 This is the paper's abstract.
 
 A model regarding the lifetime of individual source code lines or tokens can
