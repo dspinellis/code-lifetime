@@ -119,8 +119,10 @@ a0759fa8d6838170e4b693d26d6edb5e0463c1d0 1370689181
 
 ## difflog
 The _difflog_ tool produces a Git repository's log of changes
-in unified diff format
-This is the equivalent of running, as required by the _lifetime_ tool.
+in unified diff format.
+The processed commits are obtained through history simplification using _daglp_.
+The output is roughly the equivalent of running,
+as required by the _lifetime_ tool:
 
 ```
 git -c diff.renameLimit=30000 log -m -M -C --pretty=tformat:'commit %H %at' --topo-order --reverse -U0
