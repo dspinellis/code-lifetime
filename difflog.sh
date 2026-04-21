@@ -31,10 +31,8 @@ ulimit -s 65536
 
 # Obtain a list of commit timestamp parents in topological order
 git log --pretty=tformat:'%H %at %P' --topo-order $BRANCH -- |
-tee $TOOLDIR/$outdir/commit-tree.txt |
 # Provide the graph's longest path
-$TOOLDIR/daglp |
-tee $TOOLDIR/$outdir/commit-daglp.txt |
+daglp |
 while read sha ts ; do
   if [ "$prev" ] ; then
     echo "commit $sha $ts"
