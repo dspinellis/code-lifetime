@@ -37,6 +37,7 @@ main::HELP_MESSAGE
 	print $fh qq{
 Usage: $0 [options ...] [input file ...]
 -c	Output in "compressed" format: commit, followed by birthday of deaths
+-C	Reconstruct source lines preceded by churn counts of equal-line changes
 -d 	Report the LoC delta
 -D opts	Debug as specified by the letters in opts
 	C Show commit set changes
@@ -60,9 +61,9 @@ Usage: $0 [options ...] [input file ...]
 };
 }
 
-our($opt_c, $opt_d, $opt_D, $opt_e, $opt_E, $opt_g, $opt_h, $opt_l, $opt_q, $opt_s, $opt_t);
+our($opt_c, $opt_C, $opt_d, $opt_D, $opt_e, $opt_E, $opt_g, $opt_h, $opt_l, $opt_q, $opt_s, $opt_t);
 
-if (!getopts('cdD:e:Eg:hlqst')) {
+if (!getopts('cCdD:e:Eg:hlqst')) {
 	main::HELP_MESSAGE(*STDERR);
 	exit 1;
 }
@@ -166,6 +167,7 @@ for (;;) {
 		# Timestamp
 		($commit, $hash, $timestamp) = split;
 		print "commit $hash $timestamp\n" if ($opt_c || $debug_commit_header);
+		# Report progress
 		print STDERR "commit $hash $timestamp\n" if (!$debug_reconstruction && !$opt_q);
 
 		# Separator
@@ -271,7 +273,7 @@ for (;;) {
 				$op = 'del';
 				push(@cc, { op => 'del', path => $old });
 				# Print death times of deleted file's lines
-				if (!$debug_reconstruction && output_source_code($old)) {
+				if (!$debug_reconstruction && !$opt_C && output_source_code($old)) {
 					for my $l (@{$flt{$old}}) {
 						if ($opt_c) {
 							print "$l\n";
@@ -317,6 +319,7 @@ for (;;) {
 		}
 		my $binary = exists($binary{$old});
 		my $output_source_code = output_source_code($old);
+		my @delete_range; # Churn count and content of deleted lines
 		for (my $i = $old_start; $i < $old_end; $i++) {
 			if ($binary) {
 				$_ = <>;
@@ -328,6 +331,8 @@ for (;;) {
 				if ($debug_reconstruction) {
 					# Verify that the -removed line matches the previous +recorded one.
 					bail_out("Expecting at($i + $old_offset) " . $oref->[$i + $old_offset]) unless (substr($oref->[$i + $old_offset], 1) eq substr($_, 1));
+				} elsif ($opt_C) {
+					push(@delete_range, $oref->[$i + $old_offset]);
 				} elsif ($output_source_code) {
 					if ($opt_c) {
 						print "$oref->[$i + $old_offset]\n";
@@ -351,9 +356,20 @@ for (;;) {
 		print "after oref=$#$oref\n" if ($debug_splice);
 		$_ = <> if (defined($_) && $_ =~ m/^\\ No newline at end of file/);
 		my @add;
+		my $line_count = 0;
 		for (my $i = $new_start; $i < $new_end; $i++) {
 			if ($debug_reconstruction) {
 				push(@add, $_);
+			} elsif ($opt_C) {
+				my ($churn_count, $rest);
+				if ($old_end - $old_start == $new_end - $new_start) {
+					# Increment count for single-line change.
+					($churn_count, $rest) = ($delete_range[$line_count++] =~ m/^(\d+)\t(.*)/);
+					$churn_count += 1;
+				} else {
+					$churn_count = 0;
+				}
+				push(@add, "$churn_count\t" . substr($_, 1));
 			} elsif ($opt_l) {
 				push(@add, "$timestamp L " . line_details(substr($_, 1)));
 			} elsif ($opt_t) {
@@ -401,7 +417,7 @@ for (;;) {
 }
 
 process_last_commit();
-if ($debug_reconstruction) {
+if ($debug_reconstruction || $opt_C) {
 	reconstruct();
 } else {
 	dump_alive();
@@ -443,7 +459,7 @@ reconstruct
 		make_path($dir);
 		open(my $out, '>', $path) || die "Unable to open $path: $!\n";
 		for my $line (@{$flt{$f}}) {
-			print $out substr($line, 1);
+			print $out $opt_C ? $line : substr($line, 1);
 		}
 	}
 }
