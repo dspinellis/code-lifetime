@@ -37,7 +37,7 @@ main::HELP_MESSAGE
 	print $fh qq{
 Usage: $0 [options ...] [input file ...]
 -c	Output in "compressed" format: commit, followed by birthday of deaths
--C	Reconstruct source lines preceded by churn counts of equal-line changes
+-C dir	Reconstruct source lines preceded by churn counts of equal-line changes
 -d 	Report the LoC delta
 -D opts	Debug as specified by the letters in opts
 	C Show commit set changes
@@ -63,7 +63,7 @@ Usage: $0 [options ...] [input file ...]
 
 our($opt_c, $opt_C, $opt_d, $opt_D, $opt_e, $opt_E, $opt_g, $opt_h, $opt_l, $opt_q, $opt_s, $opt_t);
 
-if (!getopts('cCdD:e:Eg:hlqst')) {
+if (!getopts('cC:dD:e:Eg:hlqst')) {
 	main::HELP_MESSAGE(*STDERR);
 	exit 1;
 }
@@ -448,7 +448,7 @@ process_last_commit
 sub
 reconstruct
 {
-	my $base_dir = 'RECONSTRUCTION';
+	my $base_dir = defined($opt_C) ? $opt_C : 'RECONSTRUCTION';
 	remove_tree($base_dir);
 	for my $f (keys %flt) {
 		next if ($f eq '/dev/null');

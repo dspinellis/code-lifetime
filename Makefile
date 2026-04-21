@@ -27,12 +27,15 @@ daglp: daglp.cpp
 test-perl: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch
 	git clone ./code-lifetime-test.git
+	cd code-lifetime-test && ../difflog.sh master | ../lifetime.pl -C ../churn
+	diff -r churn.ok/ churn/
 	git clone ./code-lifetime-test-branch.git
 	./sync-test-branches.sh
 	./lifetime.pl -D u
 	TOOL=./lifetime.pl ./runtest.sh
+	rm -rf churn/
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
-	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt
+	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
 
 clean:
 	rm -f daglp
