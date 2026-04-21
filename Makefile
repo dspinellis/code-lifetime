@@ -26,8 +26,8 @@ daglp: daglp.cpp
 
 test:
 	rm -rf code-lifetime-test code-lifetime-test-branch
-	git clone https://github.com/dspinellis/code-lifetime-test.git
-	git clone https://github.com/dspinellis/code-lifetime-test-branch.git
+	git clone ./code-lifetime-test.git
+	git clone ./code-lifetime-test-branch.git
 	./sync-test-branches.sh
 	perl lifetime.pl -D u
 	./runtest.sh
