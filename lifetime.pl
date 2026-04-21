@@ -460,6 +460,7 @@ dump_alive
 		$eol = " alive NA\n";
 	}
 
+	# For each file
 	for my $f (keys %flt) {
 		next if ($f eq '/dev/null');
 		next unless defined($flt{$f});

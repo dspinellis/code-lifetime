@@ -24,13 +24,13 @@ all: daglp
 
 daglp: daglp.cpp
 
-test: daglp
+test-perl: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch
 	git clone ./code-lifetime-test.git
 	git clone ./code-lifetime-test-branch.git
 	./sync-test-branches.sh
-	perl lifetime.pl -D u
-	./runtest.sh
+	./lifetime.pl -D u
+	TOOL=./lifetime.pl ./runtest.sh
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
 	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt
 

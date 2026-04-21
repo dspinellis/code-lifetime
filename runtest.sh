@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 1996-2000 Diomidis Spinellis
+# Copyright 1996-2026 Diomidis Spinellis
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ test_one()
   (
     cd code-lifetime-test &&
     git log -m -M -C -C --pretty=tformat:'commit %H %ct' --topo-order --reverse -U0  | tee ../diff.diff
-  ) | perl lifetime.pl -g growth.txt -D RH || exit 77
+    ) | $TOOL -g growth.txt -D RH || exit 77
   compare code-lifetime-test
 }
 
@@ -56,7 +56,7 @@ test_final()
     cd $1 &&
       git checkout master &&
     $TOOLDIR/difflog.sh master
-  ) | perl lifetime.pl -g growth.txt -D RH || exit 77
+    ) | $TOOL -g growth.txt -D RH || exit 77
   compare $1
 }
 
