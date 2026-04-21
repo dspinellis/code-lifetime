@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright 1996-2000 Diomidis Spinellis
+# Copyright 1996-2026 Diomidis Spinellis
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -326,6 +326,7 @@ for (;;) {
 			$loc-- if ($output_source_code);
 			if (defined($oref->[$i + $old_offset])) {
 				if ($debug_reconstruction) {
+					# Verify that the -removed line matches the previous +recorded one.
 					bail_out("Expecting at($i + $old_offset) " . $oref->[$i + $old_offset]) unless (substr($oref->[$i + $old_offset], 1) eq substr($_, 1));
 				} elsif ($output_source_code) {
 					if ($opt_c) {
@@ -529,6 +530,7 @@ commit_changes
 	}
 	undef @cc;
 
+	# Check if used has specified to stop at this commit.
 	if (defined($opt_e) && $opt_e eq $hash) {
 		reconstruct();
 		exit 0;
