@@ -24,7 +24,7 @@ all: daglp
 
 daglp: daglp.cpp
 
-test:
+test: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch
 	git clone ./code-lifetime-test.git
 	git clone ./code-lifetime-test-branch.git
