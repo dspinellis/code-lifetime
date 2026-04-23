@@ -306,17 +306,17 @@ def str_equal(expected, obtained):
         raise AssertionError("Expected\t[%s]\nObtained\t[%s]" % (expected, obtained))
 
 
-def print_stdout_line(text):
+def print_stderr_line(text):
     try:
-        print(text)
+        print(text, file=sys.stderr)
     except UnicodeEncodeError:
-        encoding = sys.stdout.encoding or "utf-8"
+        encoding = sys.stderr.encoding or "utf-8"
         data = ("%s\n" % text).encode(encoding, errors="backslashreplace")
-        if hasattr(sys.stdout, "buffer"):
-            sys.stdout.buffer.write(data)
-            sys.stdout.buffer.flush()
+        if hasattr(sys.stderr, "buffer"):
+            sys.stderr.buffer.write(data)
+            sys.stderr.buffer.flush()
         else:
-            sys.stdout.write(data.decode(encoding, errors="replace"))
+            sys.stderr.write(data.decode(encoding, errors="replace"))
 
 
 def test_line_details():
@@ -917,7 +917,7 @@ def main(argv=None):
     except SystemExit as exc:
         return int(exc.code)
     except (Exception) as exc:
-        print_stdout_line("Error: %s" % exc)
+        print_stderr_line("Error: %s" % exc)
         return 1
 
 
