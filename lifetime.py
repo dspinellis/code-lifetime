@@ -37,7 +37,7 @@ class LifetimeError(Exception):
 
 class LifetimeArgumentParser(argparse.ArgumentParser):
     def error(self, message):
-        raise LifetimeError("argument error: %s" % message)
+        raise LifetimeError(f"argument error: {message}")
 
 
 class FileDetails:
@@ -82,18 +82,10 @@ class LineDetails:
         self.logical = logical
 
     def __str__(self):
-        return "%d %d %d %d %d %d %d %d %d %d %d" % (
-            self.length,
-            self.startspace,
-            self.string,
-            self.comment,
-            self.comma,
-            self.bracket,
-            self.access,
-            self.assignment,
-            self.scope,
-            self.array,
-            self.logical,
+        return (
+            f"{self.length} {self.startspace} {self.string} {self.comment} "
+            f"{self.comma} {self.bracket} {self.access} {self.assignment} "
+            f"{self.scope} {self.array} {self.logical}"
         )
 
 
@@ -303,7 +295,7 @@ def line_details(line):
 
 def str_equal(expected, obtained):
     if expected != obtained:
-        raise AssertionError("Expected\t[%s]\nObtained\t[%s]" % (expected, obtained))
+        raise AssertionError(f"Expected\t[{expected}]\nObtained\t[{obtained}]")
 
 
 def print_stderr_line(text):
@@ -311,7 +303,7 @@ def print_stderr_line(text):
         print(text, file=sys.stderr)
     except UnicodeEncodeError:
         encoding = sys.stderr.encoding or "utf-8"
-        data = ("%s\n" % text).encode(encoding, errors="backslashreplace")
+        data = f"{text}\n".encode(encoding, errors="backslashreplace")
         if hasattr(sys.stderr, "buffer"):
             sys.stderr.buffer.write(data)
             sys.stderr.buffer.flush()
@@ -371,22 +363,31 @@ class LifetimeParser:
 
         # Reconstruct the repository contents from its log -D R
         self.debug_reconstruction = self.debug_option("R")
+        self.debug_print_reconstruction = self.debug_printer(self.debug_reconstruction)
         # Show results of splicing operations -D S
         self.debug_splice = self.debug_option("S")
+        self.debug_print_splice = self.debug_printer(self.debug_splice)
         # Show each commit SHA, timestamp header -D H
         self.debug_commit_header = self.debug_option("H")
+        self.debug_print_commit_header = self.debug_printer(self.debug_commit_header)
         # Show diff headers -D D
         self.debug_diff_header = self.debug_option("D")
+        self.debug_print_diff_header = self.debug_printer(self.debug_diff_header)
         # Show diff extended headers -D E
         self.debug_diff_extended = self.debug_option("E")
+        self.debug_print_diff_extended = self.debug_printer(self.debug_diff_extended)
         # Show range headers -D @
         self.debug_range_header = self.debug_option("@")
+        self.debug_print_range_header = self.debug_printer(self.debug_range_header)
         # Show commit set changes -D C
         self.debug_commit_changes = self.debug_option("C")
+        self.debug_print_commit_changes = self.debug_printer(self.debug_commit_changes)
         # Show push to change set operations -D P
         self.debug_push_cc = self.debug_option("P")
+        self.debug_print_push_cc = self.debug_printer(self.debug_push_cc)
         # Show LoC change processing -D L
         self.debug_loc = self.debug_option("L")
+        self.debug_print_loc = self.debug_printer(self.debug_loc)
 
         # Old and new changed files
         self.old = None
@@ -428,8 +429,14 @@ class LifetimeParser:
     def debug_option(self, opt):
         return debug_option(self.args.debug_options, opt)
 
+    def debug_printer(self, enabled):
+        return self.print_out if enabled else self.noop_print_out
+
     def print_out(self, text, end="\n"):
         print(text, end=end, file=self.out)
+
+    def noop_print_out(self, text, end="\n"):
+        pass
 
     def run(self):
         if self.args.growth_file:
@@ -456,7 +463,7 @@ class LifetimeParser:
             elif state == "EOF":
                 break
             else:
-                self.bail_out("Invalid state %s" % state)
+                self.bail_out(f"Invalid state {state}")
 
         self.process_last_commit()
         if self.debug_reconstruction or self.args.churn_dir:
@@ -471,11 +478,13 @@ class LifetimeParser:
         if len(fields) < 3 or fields[0] != "commit":
             self.bail_out("Expecting commit")
         self.commit, self.hash, self.timestamp = fields[0], fields[1], fields[2]
-        if self.args.compressed or self.debug_commit_header:
-            self.print_out("commit %s %s" % (self.hash, self.timestamp))
+        if self.args.compressed:
+            self.print_out(f"commit {self.hash} {self.timestamp}")
+        else:
+            self.debug_print_commit_header(f"commit {self.hash} {self.timestamp}")
         # Report progress
         if not self.debug_reconstruction and not self.args.quiet:
-            print("commit %s %s" % (self.hash, self.timestamp), file=sys.stderr)
+            print(f"commit {self.hash} {self.timestamp}", file=sys.stderr)
 
         # Separator
         line = self.reader.read_raw()
@@ -520,9 +529,8 @@ class LifetimeParser:
             self.old = unescape(self.old)
             self.new = unescape(self.new)
 
-        if self.debug_diff_header:
-            self.print_out(self.current_line)
-            self.print_out("old=[%s] new=[%s]" % (self.old, self.new))
+        self.debug_print_diff_header(self.current_line)
+        self.debug_print_diff_header(f"old=[{self.old}] new=[{self.new}]")
 
         old_file = self.flt.get(self.old)
         new_file = self.flt.get(self.new)
@@ -542,8 +550,7 @@ class LifetimeParser:
             raw = self.reader.read_raw()
             if raw is None:
                 return state
-            if self.debug_diff_extended:
-                self.print_out("diff extended header: " + raw, end="")
+            self.debug_print_diff_extended("diff extended header: " + raw, end="")
             line = chomp(raw)
             if line.startswith("--- "):
                 # Start of a file difference
@@ -604,7 +611,7 @@ class LifetimeParser:
                         if self.args.compressed:
                             self.print_out(line_record)
                         else:
-                            self.delete_records.append("%s %s" % (line_record, self.timestamp))
+                            self.delete_records.append(f"{line_record} {self.timestamp}")
                 continue
             if re.match(r"^Binary files ([^ ]*) and ([^ ]*) differ", line):
                 current = self.flt.get(self.old)
@@ -627,8 +634,7 @@ class LifetimeParser:
 
     def process_range_state(self):
         # Ranges within files
-        if self.debug_range_header:
-            self.print_out(self.current_line)
+        self.debug_print_range_header(self.current_line)
         fields = self.current_line.split()
         if len(fields) < 3:
             self.bail_out("Expecting a diff range")
@@ -666,30 +672,27 @@ class LifetimeParser:
                 if self.debug_reconstruction:
                     # Verify that the -removed line matches the previous +recorded one.
                     if self.oref[pos][1:] != line[1:]:
-                        self.bail_out("Expecting at(%d + %d) %s" % (i, old_offset, self.oref[pos]))
+                        self.bail_out(f"Expecting at({i} + {old_offset}) {self.oref[pos]}")
                 elif self.args.churn_dir:
                     delete_range.append(self.oref[pos])
                 elif output:
                     if self.args.compressed:
                         self.print_out(self.oref[pos])
                     else:
-                        self.delete_records.append("%s %s" % (self.oref[pos], self.timestamp))
+                        self.delete_records.append(f"{self.oref[pos]} {self.timestamp}")
             else:
                 print(
-                    "Warning: %s line %d unknown line %s:%d"
-                    % (self.hash, self.reader.line_number, self.old, i + 1),
+                    f"Warning: {self.hash} line {self.reader.line_number} unknown line {self.old}:{i + 1}",
                     file=sys.stderr,
                 )
             line = self.reader.read_raw()
         remove_len = old_end - old_start
-        if self.debug_splice:
-            self.print_out("before oref=%d ns=%d len=%d" % (len(self.oref) - 1, old_start, remove_len))
+        self.debug_print_splice(f"before oref={len(self.oref) - 1} ns={old_start} len={remove_len}")
         if not binary and remove_len != 0:
             del self.oref[old_start + old_offset : old_start + old_offset + remove_len]
             if self.oref is not self.nref:
                 del self.nref[old_start + new_offset : old_start + new_offset + remove_len]
-        if self.debug_splice:
-            self.print_out("after oref=%d" % (len(self.oref) - 1))
+        self.debug_print_splice(f"after oref={len(self.oref) - 1}")
         if line is not None and line.startswith("\\ No newline at end of file"):
             line = self.reader.read_raw()
         add = []
@@ -708,26 +711,24 @@ class LifetimeParser:
                     churn_count = int(match.group(1)) + 1
                 else:
                     churn_count = 0
-                add.append("%d\t%s" % (churn_count, line[1:]))
+                add.append(f"{churn_count}\t{line[1:]}")
             elif self.args.line_details:
-                add.append("%s L %s" % (self.timestamp, line_details(line[1:])))
+                add.append(f"{self.timestamp} L {line_details(line[1:])}")
             elif self.args.tokens:
                 tokinfo = re.sub(r"^.(.*)\n", r"\1", line)
-                add.append("%s %s" % (self.timestamp, tokinfo))
+                add.append(f"{self.timestamp} {tokinfo}")
             else:
                 add.append(self.timestamp)
             if not binary and output:
                 self.loc += 1
             line = self.reader.read_raw()
         add_len = new_end - new_start
-        if self.debug_splice:
-            self.print_out("before nref=%d ns=%d len=%d" % (len(self.nref) - 1, new_start, add_len))
+        self.debug_print_splice(f"before nref={len(self.nref) - 1} ns={new_start} len={add_len}")
         if not binary and add_len > 0:
             self.nref[new_start:new_start] = add
         self.added_lines += add_len
         self.removed_lines += remove_len
-        if self.debug_splice:
-            self.print_out("after nref=%d" % (len(self.nref) - 1))
+        self.debug_print_splice(f"after nref={len(self.nref) - 1}")
         if line is not None and line.startswith("\\ No newline at end of file"):
             line = self.reader.read_raw()
         if line is None:
@@ -754,18 +755,17 @@ class LifetimeParser:
             return
         delta = self.loc - self.prev_loc
 
-        if self.debug_loc:
-            self.print_out("prev_loc=%d loc=%d delta=%d" % (self.prev_loc, self.loc, delta))
+        self.debug_print_loc(f"prev_loc={self.prev_loc} loc={self.loc} delta={delta}")
 
         # Print records of deleted lines
-        eol = " %d\n" % delta if self.args.delta else "\n"
+        eol = f" {delta}\n" if self.args.delta else "\n"
         for record in self.delete_records:
             print(record, end=eol, file=self.out)
         self.delete_records = []
 
         self.commit_changes()
         if self.growth_file is not None:
-            print("%s %d" % (self.timestamp, self.loc), file=self.growth_file)
+            print(f"{self.timestamp} {self.loc}", file=self.growth_file)
         self.prev_loc = self.loc
 
     # Reconstruct the state of the Git tree based on the log
@@ -809,15 +809,14 @@ class LifetimeParser:
         if context is None:
             context = "EOF"
         raise LifetimeError(
-            "commit %s %s; line %d: unexpected %s (%s)"
-            % (self.hash, self.timestamp, self.reader.line_number, context, expect)
+            f"commit {self.hash} {self.timestamp}; line {self.reader.line_number}: "
+            f"unexpected {context} ({expect})"
         )
 
     # Commit the commit changes recorded in @cc
     def commit_changes(self):
         for rec in self.cc:
-            if self.debug_commit_changes:
-                self.print_out("Change (%s) %s" % (rec["op"], rec["path"]))
+            self.debug_print_commit_changes(f"Change ({rec['op']}) {rec['path']}")
             if rec["op"] == "set":
                 lines = rec["lines"]
                 # Mark lines coming from commits with the commit's size
@@ -826,17 +825,17 @@ class LifetimeParser:
                     for index, line in enumerate(lines):
                         if self.args.tokens or self.args.line_details:
                             lines[index] = re.sub(
-                                r"^%s ([A-Z])" % re.escape(self.timestamp),
-                                "%s %d \\1" % (self.timestamp, delta),
+                                rf"^{re.escape(self.timestamp)} ([A-Z])",
+                                f"{self.timestamp} {delta} " + r"\1",
                                 line,
                             )
                         elif line == self.timestamp:
-                            lines[index] = "%s %d" % (line, delta)
+                            lines[index] = f"{line} {delta}"
                 self.flt[rec["path"]] = FileDetails(rec["path"], lines, rec.get("binary", False))
             elif rec["op"] == "del":
                 self.flt.pop(rec["path"], None)
             else:
-                self.bail_out("Unknown change record %s" % rec["op"])
+                self.bail_out(f"Unknown change record {rec['op']}")
         self.cc = []
 
         # Check if used has specified to stop at this commit.
@@ -846,8 +845,7 @@ class LifetimeParser:
 
     # Push the old and new references to the change set
     def push_to_cc(self):
-        if self.debug_push_cc:
-            self.print_out("op=%s %s %s" % (self.op, self.old, self.new))
+        self.debug_print_push_cc(f"op={self.op} {self.old} {self.new}")
         if self.op == "del":
             return
         old_binary = self.flt.get(self.old).binary if self.old in self.flt else False
@@ -917,7 +915,7 @@ def main(argv=None):
     except SystemExit as exc:
         return int(exc.code)
     except (Exception) as exc:
-        print_stderr_line("Error: %s" % exc)
+        print_stderr_line(f"Error: {exc}")
         return 1
 
 
