@@ -37,5 +37,18 @@ test-perl: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
 	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
 
+test-python: daglp
+	rm -rf code-lifetime-test code-lifetime-test-branch
+	git clone ./code-lifetime-test.git
+	cd code-lifetime-test && ../difflog.sh master | python3 ../lifetime.py -C ../churn
+	diff -r churn.ok/ churn/
+	git clone ./code-lifetime-test-branch.git
+	./sync-test-branches.sh
+	python3 -m unittest test_lifetime.py
+	python3 ./lifetime.py -D u
+	TOOL=./lifetime.py ./runtest.sh
+	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
+	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
+
 clean:
 	rm -f daglp

@@ -1,2 +1,7 @@
 daglp
 daglp.exe
+__pycache__/
+*.pyc*
+RECONSTRUCTION/
+py-churn/
+py-growth.txt
