@@ -42,13 +42,21 @@ class LifetimeArgumentParser(argparse.ArgumentParser):
 class FileDetails:
     """Details tracked for a file while processing the diff stream."""
 
-    def __init__(self, path, lines=None, binary=False):
+    def __init__(self, path, lines=None, binary=False, metrics=None, changed_lifetimes=None):
         self.path = path
         self.lines = list(lines) if lines is not None else []
         self.binary = binary
+        self.metrics = list(metrics) if metrics is not None else []
+        self.changed_lifetimes = list(changed_lifetimes) if changed_lifetimes is not None else []
 
-    def copy(self, path=None):
-        return FileDetails(self.path if path is None else path, self.lines, self.binary)
+    def copy(self, path=None, changed_lifetimes=None):
+        return FileDetails(
+            self.path if path is None else path,
+            self.lines,
+            self.binary,
+            self.metrics,
+            self.changed_lifetimes if changed_lifetimes is None else changed_lifetimes,
+        )
 
 
 class LineDetails:
@@ -310,6 +318,22 @@ def print_stderr_line(text):
             sys.stderr.write(data.decode(encoding, errors="replace"))
 
 
+def round_days(seconds):
+    return int((seconds / 86400.0) + 0.5)
+
+
+def median_rounded_days(values):
+    if not values:
+        return 0
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        median_seconds = ordered[middle]
+    else:
+        median_seconds = (ordered[middle - 1] + ordered[middle]) / 2.0
+    return round_days(median_seconds)
+
+
 class LifetimeParser:
     def __init__(self, args):
         self.args = args
@@ -383,6 +407,10 @@ class LifetimeParser:
         # Reference to copy of the old and new file contents
         self.oref = None
         self.nref = None
+        self.oref_metrics = None
+        self.nref_metrics = None
+        self.oref_changed_lifetimes = None
+        self.nref_changed_lifetimes = None
         self.current_line = None
 
     def debug_option(self, opt):
@@ -398,37 +426,42 @@ class LifetimeParser:
         pass
 
     def run(self):
-        if self.args.growth_file:
-            self.growth_file = open(
-                self.args.growth_file,
-                "w",
-                encoding="utf-8",
-                errors="surrogateescape",
-                newline="",
-            )
+        try:
+            if self.args.growth_file:
+                self.growth_file = open(
+                    self.args.growth_file,
+                    "w",
+                    encoding="utf-8",
+                    errors="surrogateescape",
+                    newline="",
+                )
 
-        state = "commit"
-        self.current_line = self.reader.read_chomp()
-        if self.current_line is None:
-            return
+            state = "commit"
+            self.current_line = self.reader.read_chomp()
+            if self.current_line is None:
+                return
 
-        while True:
-            if state == "commit":
-                state = self.process_commit_state()
-            elif state == "diff":
-                state = self.process_diff_state()
-            elif state == "range":
-                state = self.process_range_state()
-            elif state == "EOF":
-                break
+            while True:
+                if state == "commit":
+                    state = self.process_commit_state()
+                elif state == "diff":
+                    state = self.process_diff_state()
+                elif state == "range":
+                    state = self.process_range_state()
+                elif state == "EOF":
+                    break
+                else:
+                    self.bail_out(f"Invalid state {state}")
+
+            self.process_last_commit()
+            if self.debug_reconstruction or self.args.churn_dir:
+                self.reconstruct()
             else:
-                self.bail_out(f"Invalid state {state}")
-
-        self.process_last_commit()
-        if self.debug_reconstruction or self.args.churn_dir:
-            self.reconstruct()
-        else:
-            self.dump_alive()
+                self.dump_alive()
+        finally:
+            self.reader.close()
+            if self.growth_file is not None:
+                self.growth_file.close()
 
     def process_commit_state(self):
         if self.hash is not None:
@@ -494,12 +527,20 @@ class LifetimeParser:
         old_file = self.flt.get(self.old)
         new_file = self.flt.get(self.new)
         self.oref = list(old_file.lines) if old_file is not None else []
+        self.oref_metrics = list(old_file.metrics) if old_file is not None else []
+        self.oref_changed_lifetimes = list(old_file.changed_lifetimes) if old_file is not None else []
         if self.old == self.new:
             self.nref = self.oref
+            self.nref_metrics = self.oref_metrics
+            self.nref_changed_lifetimes = self.oref_changed_lifetimes
         elif new_file is not None:
             self.nref = list(new_file.lines)
+            self.nref_metrics = list(new_file.metrics)
+            self.nref_changed_lifetimes = list(new_file.changed_lifetimes)
         else:
             self.nref = []
+            self.nref_metrics = []
+            self.nref_changed_lifetimes = []
 
         state = "EOF"
         # Read the "extended header lines" to handle copies and renames
@@ -536,9 +577,24 @@ class LifetimeParser:
                     self.bail_out("Missing rename from")
                 source = self.flt.get(from_path, FileDetails(from_path))
                 self.cc.append({"op": "del", "path": from_path})
-                self.cc.append({"op": "set", "path": to_path, "lines": list(source.lines), "binary": source.binary})
+                self.cc.append(
+                    {
+                        "op": "set",
+                        "path": to_path,
+                        "lines": list(source.lines),
+                        "binary": source.binary,
+                        "metrics": list(source.metrics),
+                        "changed_lifetimes": list(source.changed_lifetimes),
+                    }
+                )
                 self.oref = list(self.flt.get(self.old, FileDetails(self.old)).lines)
+                self.oref_metrics = list(self.flt.get(self.old, FileDetails(self.old)).metrics)
+                self.oref_changed_lifetimes = list(
+                    self.flt.get(self.old, FileDetails(self.old)).changed_lifetimes
+                )
                 self.nref = self.oref
+                self.nref_metrics = self.oref_metrics
+                self.nref_changed_lifetimes = self.oref_changed_lifetimes
                 continue
             match = re.match(r"^copy to (.*)", line)
             if match:
@@ -547,10 +603,21 @@ class LifetimeParser:
                 if from_path is None:
                     self.bail_out("Missing copy from")
                 source = self.flt.get(from_path, FileDetails(from_path))
-                self.cc.append({"op": "set", "path": to_path, "lines": list(source.lines), "binary": source.binary})
+                self.cc.append(
+                    {
+                        "op": "set",
+                        "path": to_path,
+                        "lines": list(source.lines),
+                        "binary": source.binary,
+                        "metrics": list(source.metrics),
+                        "changed_lifetimes": [],
+                    }
+                )
                 if self.args.growth_file and self.output_source_code(to_path):
                     self.loc += len(source.lines)
                 self.nref = list(self.flt.get(self.old, FileDetails(self.old)).lines)
+                self.nref_metrics = list(self.flt.get(self.old, FileDetails(self.old)).metrics)
+                self.nref_changed_lifetimes = []
                 continue
             if line.startswith("commit "):
                 self.current_line = line
@@ -559,7 +626,9 @@ class LifetimeParser:
                 self.current_line = line
                 return "diff"
             if line.startswith("new file mode "):
-                self.cc.append({"op": "set", "path": self.old, "lines": [], "binary": False})
+                self.cc.append(
+                    {"op": "set", "path": self.old, "lines": [], "binary": False, "metrics": [], "changed_lifetimes": []}
+                )
                 continue
             if line.startswith("deleted file mode "):
                 self.op = "del"
@@ -617,6 +686,7 @@ class LifetimeParser:
         binary = old_file.binary if old_file is not None else False
         output = self.output_source_code(self.old)
         delete_range = []  # Churn count and content of deleted lines
+        deleted_metrics = []
         for i in range(old_start, old_end):
             if binary:
                 line = self.reader.read_raw()
@@ -628,6 +698,7 @@ class LifetimeParser:
                 self.loc -= 1
             pos = i + old_offset
             if 0 <= pos < len(self.oref):
+                birth_timestamp, churn_count = self.oref_metrics[pos]
                 if self.debug_reconstruction:
                     # Verify that the -removed line matches the previous +recorded one.
                     if self.oref[pos][1:] != line[1:]:
@@ -639,6 +710,8 @@ class LifetimeParser:
                         self.print_out(self.oref[pos])
                     else:
                         self.delete_records.append(f"{self.oref[pos]} {self.timestamp}")
+                deleted_metrics.append((birth_timestamp, churn_count))
+                self.oref_changed_lifetimes.append(int(self.timestamp) - birth_timestamp)
             else:
                 print(
                     f"Warning: {self.hash} line {self.reader.line_number} unknown line {self.old}:{i + 1}",
@@ -649,42 +722,53 @@ class LifetimeParser:
         self.debug_print_splice(f"before oref={len(self.oref) - 1} ns={old_start} len={remove_len}")
         if not binary and remove_len != 0:
             del self.oref[old_start + old_offset : old_start + old_offset + remove_len]
+            del self.oref_metrics[old_start + old_offset : old_start + old_offset + remove_len]
             if self.oref is not self.nref:
                 del self.nref[old_start + new_offset : old_start + new_offset + remove_len]
+                del self.nref_metrics[old_start + new_offset : old_start + new_offset + remove_len]
         self.debug_print_splice(f"after oref={len(self.oref) - 1}")
         if line is not None and line.startswith("\\ No newline at end of file"):
             line = self.reader.read_raw()
         add = []
+        add_metrics = []
         line_count = 0
+        equal_length_change = old_end - old_start == new_end - new_start
         for i in range(new_start, new_end):
             if line is None or not line.startswith("+"):
                 self.current_line = chomp(line) if line is not None else None
                 self.bail_out("Expecting an added line")
+            if equal_length_change and line_count < len(deleted_metrics):
+                churn_count = deleted_metrics[line_count][1] + 1
+            else:
+                churn_count = 0
             if self.debug_reconstruction:
                 add.append(line)
             elif self.args.churn_dir:
-                if old_end - old_start == new_end - new_start:
+                if equal_length_change:
                     # Increment count for single-line change.
                     match = re.match(r"^(\d+)\t(.*)", delete_range[line_count])
-                    line_count += 1
                     churn_count = int(match.group(1)) + 1
-                else:
-                    churn_count = 0
                 add.append(f"{churn_count}\t{line[1:]}")
+                add_metrics.append((int(self.timestamp), churn_count))
             elif self.args.line_details:
                 add.append(f"{self.timestamp} L {line_details(line[1:])}")
+                add_metrics.append((int(self.timestamp), 0))
             elif self.args.tokens:
                 tokinfo = re.sub(r"^.(.*)\n", r"\1", line)
                 add.append(f"{self.timestamp} {tokinfo}")
+                add_metrics.append((int(self.timestamp), 0))
             else:
                 add.append(self.timestamp)
+                add_metrics.append((int(self.timestamp), churn_count))
             if not binary and output:
                 self.loc += 1
+            line_count += 1
             line = self.reader.read_raw()
         add_len = new_end - new_start
         self.debug_print_splice(f"before nref={len(self.nref) - 1} ns={new_start} len={add_len}")
         if not binary and add_len > 0:
             self.nref[new_start:new_start] = add
+            self.nref_metrics[new_start:new_start] = add_metrics
         self.added_lines += add_len
         self.removed_lines += remove_len
         self.debug_print_splice(f"after nref={len(self.nref) - 1}")
@@ -718,8 +802,9 @@ class LifetimeParser:
 
         # Print records of deleted lines
         eol = f" {delta}\n" if self.args.delta else "\n"
-        for record in self.delete_records:
-            print(record, end=eol, file=self.out)
+        if not self.args.file_stats:
+            for record in self.delete_records:
+                print(record, end=eol, file=self.out)
         self.delete_records = []
 
         self.commit_changes()
@@ -746,6 +831,9 @@ class LifetimeParser:
 
     # Print birth timestamps of files that are still alive
     def dump_alive(self):
+        if self.args.file_stats:
+            self.dump_file_stats()
+            return
         if self.args.compressed:
             self.print_out("END")
             eol = "\n"
@@ -763,6 +851,23 @@ class LifetimeParser:
             for line in details.lines:
                 print(line, end=eol, file=self.out)
 
+    def dump_file_stats(self):
+        current_timestamp = int(self.timestamp)
+        for path in sorted(self.flt):
+            if path == "/dev/null":
+                continue
+            details = self.flt[path]
+            if details is None:
+                continue
+            if not self.output_source_code(path):
+                continue
+            max_churn = max((churn for _, churn in details.metrics), default=0)
+            changed_lifetime_days = median_rounded_days(details.changed_lifetimes)
+            line_age_days = median_rounded_days(
+                [current_timestamp - birth_timestamp for birth_timestamp, _ in details.metrics]
+            )
+            print(f"{max_churn:5d} {changed_lifetime_days:5d} {line_age_days:5d} {path}", file=self.out)
+
     def bail_out(self, expect):
         context = self.current_line
         if context is None:
@@ -778,6 +883,7 @@ class LifetimeParser:
             self.debug_print_commit_changes(f"Change ({rec['op']}) {rec['path']}")
             if rec["op"] == "set":
                 lines = rec["lines"]
+                metrics = rec.get("metrics", [])
                 # Mark lines coming from commits with the commit's size
                 if self.args.delta:
                     delta = self.loc - self.prev_loc
@@ -790,7 +896,13 @@ class LifetimeParser:
                             )
                         elif line == self.timestamp:
                             lines[index] = f"{line} {delta}"
-                self.flt[rec["path"]] = FileDetails(rec["path"], lines, rec.get("binary", False))
+                self.flt[rec["path"]] = FileDetails(
+                    rec["path"],
+                    lines,
+                    rec.get("binary", False),
+                    metrics,
+                    rec.get("changed_lifetimes", self.flt.get(rec["path"], FileDetails(rec["path"])).changed_lifetimes),
+                )
             elif rec["op"] == "del":
                 self.flt.pop(rec["path"], None)
             else:
@@ -810,8 +922,26 @@ class LifetimeParser:
         old_binary = self.flt.get(self.old).binary if self.old in self.flt else False
         new_binary = self.flt.get(self.new).binary if self.new in self.flt else old_binary
         if self.oref is not self.nref and self.op != "copy":
-            self.cc.append({"op": "set", "path": self.old, "lines": self.oref, "binary": old_binary})
-        self.cc.append({"op": "set", "path": self.new, "lines": self.nref, "binary": new_binary})
+            self.cc.append(
+                {
+                    "op": "set",
+                    "path": self.old,
+                    "lines": self.oref,
+                    "binary": old_binary,
+                    "metrics": self.oref_metrics,
+                    "changed_lifetimes": self.oref_changed_lifetimes,
+                }
+            )
+        self.cc.append(
+            {
+                "op": "set",
+                "path": self.new,
+                "lines": self.nref,
+                "binary": new_binary,
+                "metrics": self.nref_metrics,
+                "changed_lifetimes": self.nref_changed_lifetimes,
+            }
+        )
 
     def output_source_code(self, name):
         return output_source_code(name, self.args.source_only)
@@ -830,6 +960,7 @@ def build_argument_parser():
     parser.add_argument("-D", dest="debug_options", metavar="opts", help="Debug as specified by the letters in opts")
     parser.add_argument("-e", dest="end_hash", metavar="SHA", help="End processing after the specified commit hash")
     parser.add_argument("-E", dest="redirect_output", action="store_true", help="Redirect output to stderr")
+    parser.add_argument("-f", dest="file_stats", action="store_true", help="List current files with churn and age statistics")
     parser.add_argument("-g", dest="growth_file", metavar="file", help="Create a growth file")
     parser.add_argument("-h", "--help", action="help", help="Print usage information and exit")
     parser.add_argument("-l", dest="line_details", action="store_true", help="Associate line composition details")

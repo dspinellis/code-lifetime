@@ -14,11 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
+import os
 import unittest
+import uuid
+from contextlib import redirect_stderr
+from contextlib import redirect_stdout
 
 from lifetime import ESCAPED_QUOTE
 from lifetime import hide_escaped_quotes
 from lifetime import line_details
+from lifetime import main
 from lifetime import output_source_code
 from lifetime import range_parse
 from lifetime import unescape
@@ -101,6 +107,37 @@ class ConvertedFunctionTests(unittest.TestCase):
 
     def test_hide_escaped_quotes(self):
         self.assertEqual('a' + ESCAPED_QUOTE + 'b"', hide_escaped_quotes('a\\"b"'))
+
+    def test_file_stats_output(self):
+        diff_stream = """commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 86400
+
+diff --git a/f b/f
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/f
+@@ -0,0 +1,2 @@
++one
++two
+commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 172800
+
+diff --git a/f b/f
+index 1111111..2222222 100644
+--- a/f
++++ b/f
+@@ -2 +2 @@
+-two
++two changed
+"""
+        path = os.path.abspath(f"test-file-stats-{uuid.uuid4().hex}.log")
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(diff_stream)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            exit_code = main(["-q", "-f", path])
+        self.assertEqual(0, exit_code)
+        self.assertEqual("    1     1     1 f\n", stdout.getvalue())
 
 
 if __name__ == "__main__":

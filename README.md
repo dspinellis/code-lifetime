@@ -88,6 +88,8 @@ arguments.
         u Run unit tests
 -e SHA  End processing after the specified (full) SHA commit hash
 -E      Redirect (debugging) output to stderr
+-f      List current files preceded by max line churn, median changed-line
+        lifetime, and median line age (rounded integer days)
 -g file Create a growth file with line count of live lines at every commit
 -h      Print usage information and exit
 -l      Associate with each line details about its composition
