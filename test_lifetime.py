@@ -17,7 +17,6 @@
 import unittest
 
 from lifetime import ESCAPED_QUOTE
-from lifetime import LineDetailsTests
 from lifetime import hide_escaped_quotes
 from lifetime import line_details
 from lifetime import output_source_code
@@ -28,10 +27,52 @@ from lifetime import unquote_unescape
 
 class ConvertedFunctionTests(unittest.TestCase):
     def test_line_details_existing_cases(self):
-        LineDetailsTests("test_line_details").test_line_details()
+        cases = [
+            ("xx", "2 0 0 0 0 0 0 0 0 0 0"),
+            ("'x'", "3 0 1 0 0 0 0 0 0 0 0"),
+            ("#x(", "3 0 0 1 0 0 0 0 0 0 0"),
+            ("/*(", "3 0 0 1 0 0 0 0 0 0 0"),
+            ("//(", "3 0 0 1 0 0 0 0 0 0 0"),
+            ("a,b,c", "5 0 0 0 2 0 0 0 0 0 0"),
+            ("((", "2 0 0 0 0 2 0 0 0 0 0"),
+            ("a.b", "3 0 0 0 0 0 1 0 0 0 0"),
+            ("a->b", "4 0 0 0 0 0 1 0 0 0 0"),
+            ("1.2", "3 0 0 0 0 0 0 0 0 0 0"),
+            ("a=b", "3 0 0 0 0 0 0 1 0 0 0"),
+            ("a<<=b", "5 0 0 0 0 0 0 1 0 0 0"),
+            ("a*=b", "4 0 0 0 0 0 0 1 0 0 0"),
+            ("{", "1 0 0 0 0 0 0 0 1 0 0"),
+            (": ", "2 0 0 0 0 0 0 0 1 0 0"),
+            ("x:", "2 0 0 0 0 0 0 0 1 0 0"),
+            ("[", "1 0 0 0 0 0 0 0 0 1 0"),
+            ("==", "2 0 0 0 0 0 0 0 0 0 1"),
+            ("a>=", "3 0 0 0 0 0 0 0 0 0 1"),
+            ("b<=", "3 0 0 0 0 0 0 0 0 0 1"),
+            ("!=", "2 0 0 0 0 0 0 0 0 0 1"),
+            ("a<b", "3 0 0 0 0 0 0 0 0 0 1"),
+            ("a<<b", "4 0 0 0 0 0 0 0 0 0 0"),
+            ("a>b", "3 0 0 0 0 0 0 0 0 0 1"),
+            ("!!", "2 0 0 0 0 0 0 0 0 0 2"),
+            ("||", "2 0 0 0 0 0 0 0 0 0 1"),
+            ("&&", "2 0 0 0 0 0 0 0 0 0 1"),
+            ("a and b", "7 0 0 0 0 0 0 0 0 0 1"),
+            ("a or b", "6 0 0 0 0 0 0 0 0 0 1"),
+            ("not b", "5 0 0 0 0 0 0 0 0 0 1"),
+            ("notb", "4 0 0 0 0 0 0 0 0 0 0"),
+            ("is not", "6 0 0 0 0 0 0 0 0 0 2"),
+            (" x", "2 1 0 0 0 0 0 0 0 0 0"),
+            ("   x", "4 3 0 0 0 0 0 0 0 0 0"),
+            ("\t", "1 8 0 0 0 0 0 0 0 0 0"),
+            ("\t\tx", "3 16 0 0 0 0 0 0 0 0 0"),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(expected, str(line_details(text)))
 
     def test_range_parse(self):
         self.assertEqual((0, 1), range_parse("-1"))
+        self.assertEqual((4, 7), range_parse("+5,3"))
+        self.assertEqual((0, 0), range_parse("-7,0"))
         self.assertEqual((0, 0), range_parse("-3,0"))
         self.assertEqual((9, 14), range_parse("+10,5"))
 

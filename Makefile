@@ -44,8 +44,7 @@ test-python: daglp
 	diff -r churn.ok/ churn/
 	git clone ./code-lifetime-test-branch.git
 	./sync-test-branches.sh
-	python3 -m unittest test_lifetime.py
-	python3 ./lifetime.py -D u
+	python3 -m unittest discover -s . -p 'test*.py'
 	TOOL=./lifetime.py ./runtest.sh
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
 	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn

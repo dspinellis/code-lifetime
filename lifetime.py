@@ -25,7 +25,6 @@ import os
 import re
 import shutil
 import sys
-import unittest
 
 VERSION = "0.1"
 ESCAPED_QUOTE = "\001"
@@ -309,46 +308,6 @@ def print_stderr_line(text):
             sys.stderr.buffer.flush()
         else:
             sys.stderr.write(data.decode(encoding, errors="replace"))
-
-
-def test_line_details():
-    # l s s c c b a a s a l
-    str_equal("2 0 0 0 0 0 0 0 0 0 0", line_details("xx"))
-    str_equal("3 0 1 0 0 0 0 0 0 0 0", line_details("'x'"))
-    str_equal("3 0 0 1 0 0 0 0 0 0 0", line_details("#x("))
-    str_equal("3 0 0 1 0 0 0 0 0 0 0", line_details("/*("))
-    str_equal("3 0 0 1 0 0 0 0 0 0 0", line_details("//("))
-    str_equal("5 0 0 0 2 0 0 0 0 0 0", line_details("a,b,c"))
-    str_equal("2 0 0 0 0 2 0 0 0 0 0", line_details("(("))
-    str_equal("3 0 0 0 0 0 1 0 0 0 0", line_details("a.b"))
-    str_equal("4 0 0 0 0 0 1 0 0 0 0", line_details("a->b"))
-    str_equal("3 0 0 0 0 0 0 0 0 0 0", line_details("1.2"))
-    str_equal("3 0 0 0 0 0 0 1 0 0 0", line_details("a=b"))
-    str_equal("5 0 0 0 0 0 0 1 0 0 0", line_details("a<<=b"))
-    str_equal("4 0 0 0 0 0 0 1 0 0 0", line_details("a*=b"))
-    str_equal("1 0 0 0 0 0 0 0 1 0 0", line_details("{"))
-    str_equal("2 0 0 0 0 0 0 0 1 0 0", line_details(": "))
-    str_equal("2 0 0 0 0 0 0 0 1 0 0", line_details("x:"))
-    str_equal("1 0 0 0 0 0 0 0 0 1 0", line_details("["))
-    str_equal("2 0 0 0 0 0 0 0 0 0 1", line_details("=="))
-    str_equal("3 0 0 0 0 0 0 0 0 0 1", line_details("a>="))
-    str_equal("3 0 0 0 0 0 0 0 0 0 1", line_details("b<="))
-    str_equal("2 0 0 0 0 0 0 0 0 0 1", line_details("!="))
-    str_equal("3 0 0 0 0 0 0 0 0 0 1", line_details("a<b"))
-    str_equal("4 0 0 0 0 0 0 0 0 0 0", line_details("a<<b"))
-    str_equal("3 0 0 0 0 0 0 0 0 0 1", line_details("a>b"))
-    str_equal("2 0 0 0 0 0 0 0 0 0 2", line_details("!!"))
-    str_equal("2 0 0 0 0 0 0 0 0 0 1", line_details("||"))
-    str_equal("2 0 0 0 0 0 0 0 0 0 1", line_details("&&"))
-    str_equal("7 0 0 0 0 0 0 0 0 0 1", line_details("a and b"))
-    str_equal("6 0 0 0 0 0 0 0 0 0 1", line_details("a or b"))
-    str_equal("5 0 0 0 0 0 0 0 0 0 1", line_details("not b"))
-    str_equal("4 0 0 0 0 0 0 0 0 0 0", line_details("notb"))
-    str_equal("6 0 0 0 0 0 0 0 0 0 2", line_details("is not"))
-    str_equal("2 1 0 0 0 0 0 0 0 0 0", line_details(" x"))
-    str_equal("4 3 0 0 0 0 0 0 0 0 0", line_details("   x"))
-    str_equal("1 8 0 0 0 0 0 0 0 0 0", line_details("\t"))
-    str_equal("3 16 0 0 0 0 0 0 0 0 0", line_details("\t\tx"))
 
 
 class LifetimeParser:
@@ -858,26 +817,6 @@ class LifetimeParser:
         return output_source_code(name, self.args.source_only)
 
 
-class LineDetailsTests(unittest.TestCase):
-    def test_line_details(self):
-        test_line_details()
-
-    def test_range_parse(self):
-        self.assertEqual((0, 1), range_parse("-1"))
-        self.assertEqual((4, 7), range_parse("+5,3"))
-        self.assertEqual((0, 0), range_parse("-7,0"))
-
-    def test_unescape(self):
-        self.assertEqual('a"b', unescape("a" + ESCAPED_QUOTE + "b"))
-        self.assertEqual("a\tb\nc", unescape(r"a\tb\nc"))
-        self.assertEqual("a b", unescape(r"a\040b"))
-
-    def test_output_source_code(self):
-        self.assertTrue(output_source_code("main.c", True))
-        self.assertTrue(output_source_code("tool.py", True))
-        self.assertFalse(output_source_code("README.md", True))
-
-
 def build_argument_parser():
     parser = LifetimeArgumentParser(
         usage="%(prog)s [options ...] [input file ...]",
@@ -905,10 +844,6 @@ def main(argv=None):
     parser = build_argument_parser()
     try:
         args = parser.parse_args(argv)
-        if debug_option(args.debug_options, "u"):
-            suite = unittest.defaultTestLoader.loadTestsFromTestCase(LineDetailsTests)
-            result = unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(suite)
-            return 0 if result.wasSuccessful() else 1
         parser_instance = LifetimeParser(args)
         parser_instance.run()
         return 0
