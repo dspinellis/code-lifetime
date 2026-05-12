@@ -30,15 +30,6 @@ VERSION = "0.1"
 ESCAPED_QUOTE = "\001"
 
 
-class LifetimeError(Exception):
-    """Fatal processing error reported without an exception trace."""
-
-
-class LifetimeArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
-        raise LifetimeError(f"argument error: {message}")
-
-
 class FileDetails:
     """Details tracked for a file while processing the diff stream."""
 
@@ -949,11 +940,8 @@ class LifetimeParser:
 
 
 def build_argument_parser():
-    parser = LifetimeArgumentParser(
-        usage="%(prog)s [options ...] [input file ...]",
-        add_help=False,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=None,
+    parser = argparse.ArgumentParser(
+        description="Explore line lifetime and churn"
     )
     parser.add_argument("-c", dest="compressed", action="store_true", help='Output in a compressed format: line death times can be obtained from commit markers and alive lines appear after a line marked END.')
     parser.add_argument("-C", dest="churn_dir", metavar="dir", help="Reconstruct source lines preceded by churn counts")
@@ -963,7 +951,6 @@ def build_argument_parser():
     parser.add_argument("-E", dest="redirect_output", action="store_true", help="Redirect output to stderr")
     parser.add_argument("-f", dest="file_stats", action="store_true", help="List current files with churn and age metrics")
     parser.add_argument("-g", dest="growth_file", metavar="file", help="Create a file with total LoC for each commit")
-    parser.add_argument("-h", "--help", action="help", help="Print usage information and exit")
     parser.add_argument("-l", dest="line_details", action="store_true", help="Output number of token types contained in each line")
     parser.add_argument("-q", dest="quiet", action="store_true", help="Quiet progress output")
     parser.add_argument("-s", dest="source_only", action="store_true", help="Report only source code files")
