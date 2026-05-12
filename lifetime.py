@@ -743,6 +743,7 @@ class LifetimeParser:
                 churn_count = 0
             if self.debug_reconstruction:
                 add.append(line)
+                add_metrics.append((int(self.timestamp), churn_count))
             elif self.args.churn_dir:
                 if equal_length_change:
                     # Increment count for single-line change.

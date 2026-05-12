@@ -54,7 +54,7 @@ test_final()
 {
   (
     cd $1 &&
-      git checkout master &&
+      git checkout -q master &&
     $TOOLDIR/difflog.sh master
     ) | $TOOL -g growth.txt -D RH || exit 77
   compare $1
@@ -66,7 +66,7 @@ if [ "x$1" = 'x-1' ] ; then
   exit 0
 fi
 
-(cd code-lifetime-test && git checkout master >/dev/null && git log --reverse --format=%H master) |
+(cd code-lifetime-test && git checkout -q master >/dev/null && git log --reverse --format=%H master) |
 while read sha ; do
   echo Verifying $sha
   ( cd code-lifetime-test &&
