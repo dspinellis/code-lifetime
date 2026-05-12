@@ -193,7 +193,7 @@ def output_source_code(name, source_only=False):
     # Keep tokenize.pl:tokenize, lifetime.pl:output_source_code, repo-metrics-report.sh, analyze-moves.sh in sync
     return (
         re.search(
-            r"\.(C|c|cc|cpp|cs|cxx|hh|hpp|h\+\+|c\+\+|h|H|hxx|java|((php[3457s]?)|pht|php-s)|py)$",
+            r"\.(C|c|cc|cpp|cs|cxx|go|hh|hpp|h\+\+|c\+\+|h|H|hxx|java|((php[3457s]?)|pht|php-s)|py|rs)$",
             name,
         )
         is not None
