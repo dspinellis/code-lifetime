@@ -16,8 +16,8 @@
 
 import io
 import os
+import tempfile
 import unittest
-import uuid
 from contextlib import redirect_stderr
 from contextlib import redirect_stdout
 
@@ -129,13 +129,21 @@ index 1111111..2222222 100644
 -two
 +two changed
 """
-        path = os.path.abspath(f"test-file-stats-{uuid.uuid4().hex}.log")
-        with open(path, "w", encoding="utf-8", newline="") as handle:
-            handle.write(diff_stream)
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with redirect_stdout(stdout), redirect_stderr(stderr):
-            exit_code = main(["-q", "-f", path])
+        fd, path = tempfile.mkstemp(
+            prefix="test-file-stats-",
+            suffix=".log",
+            dir=os.getcwd(),
+        )
+        os.close(fd)
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(diff_stream)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = main(["-q", "-f", path])
+        finally:
+            os.unlink(path)
         self.assertEqual(0, exit_code)
         self.assertEqual("    1     1     1 f\n", stdout.getvalue())
 
