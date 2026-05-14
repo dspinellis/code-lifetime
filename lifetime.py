@@ -24,11 +24,15 @@ import argparse
 import os
 import re
 import shutil
+import subprocess
 import sys
+from typing import Iterator, Dict
 
 VERSION = "0.1"
 ESCAPED_QUOTE = "\001"
 
+class ProcessingError(Exception):
+    """Fatal processing error reported without an exception trace."""
 
 class FileDetails:
     """Details tracked for a file while processing the diff stream."""
@@ -88,12 +92,27 @@ class LineDetails:
 
 
 class InputReader:
-    def __init__(self, paths):
-        self.paths = paths
+    def __init__(self):
         self.line_number = 0
         self._index = 0
         self._current = None
         self._close_current = False
+
+    @classmethod
+    def from_paths(cls, paths):
+        """Construct an object to return lines from the specified paths."""
+        instance = cls()
+        instance.paths = paths
+        instance.line_iterator = None
+        return instance
+
+    @classmethod
+    def from_iterator(cls, iterator):
+        """Construct an object to return lines from the specified iterator."""
+        instance = cls()
+        instance.paths = None
+        instance.line_iterator = iterator
+        return instance
 
     def close(self):
         if self._current is not None and self._close_current:
@@ -111,7 +130,8 @@ class InputReader:
         self._close_current = True
         return True
 
-    def read_raw(self):
+    def _read_raw_from_paths(self):
+        """Return the next read line from the files specified in paths."""
         while True:
             if self._current is None:
                 if self.paths:
@@ -129,7 +149,23 @@ class InputReader:
             if not self._open_next():
                 return None
 
+    def _read_raw_from_iterator(self):
+        """Return the next read line from the line_iterator iterator."""
+        line = next(self.line_iterator, "")
+        if line != "":
+            self.line_number += 1
+            return line
+        return None
+
+    def read_raw(self):
+        """Return the next read line, including the trailing newline."""
+        if self.paths is not None:
+            return self._read_raw_from_paths()
+        else:
+            return self._read_raw_from_iterator()
+
     def read_chomp(self):
+        """Return the next read line, without any trailing newling."""
         line = self.read_raw()
         return None if line is None else chomp(line)
 
@@ -173,7 +209,7 @@ def range_parse(diff_range):
     if match:
         start = int(match.group(1))
         return (start - 1, start)
-    raise LifetimeError("Expecting a diff range")
+    raise ProcessingError("Expecting a diff range")
 
 
 # Return true if we are supposed to output details regarding the specified file
@@ -291,11 +327,6 @@ def line_details(line):
     )
 
 
-def str_equal(expected, obtained):
-    if expected != obtained:
-        raise AssertionError(f"Expected\t[{expected}]\nObtained\t[{obtained}]")
-
-
 def print_stderr_line(text):
     try:
         print(text, file=sys.stderr)
@@ -325,11 +356,31 @@ def median_rounded_days(values):
     return round_days(median_seconds)
 
 
-class LifetimeParser:
+class Processor:
     def __init__(self, args):
         self.args = args
-        self.reader = InputReader(args.input_files)
-        self.out = sys.stderr if args.redirect_output else sys.stdout
+        if hasattr(args, "input_files"):
+            # lifetime.py CLI: Read the output of difflog.sh.
+            self.reader = InputReader.from_paths(args.input_files)
+            # Other processing specific to lifetime.py CLI
+            self.out = sys.stderr if args.redirect_output else sys.stdout
+        else:
+            # git-hot CLI: Invoke Git commands to obtain input.
+            # With path specified report churn for that file.
+            # Otherwise report metrics for all files and, optionally,
+            # report in the specified directory churn for all files.
+            self.reader = InputReader.from_iterator(
+                self.stream_git_history(args.path))
+            self.args.file_metrics = (args.path is None)
+            self.out = sys.stdout
+            self.args.growth_file = None
+            self.args.compressed = False
+            self.args.source_only = False
+            self.args.line_details = False
+            self.args.tokens = False
+            self.args.delta = False
+            self.args.end_hash = False
+
         self.growth_file = None
 
         self.loc = 0
@@ -359,9 +410,14 @@ class LifetimeParser:
         # Show push to change set operations -D P
         self.debug_push_cc = self.debug_option("P")
         self.debug_print_push_cc = self.debug_printer(self.debug_push_cc)
+
         # Show LoC change processing -D L
         self.debug_loc = self.debug_option("L")
         self.debug_print_loc = self.debug_printer(self.debug_loc)
+
+        # Show Git invocations -D g
+        self.debug_git = self.debug_option("g")
+        self.debug_print_git = self.debug_printer(self.debug_git)
 
         # Old and new changed files
         self.old = None
@@ -447,12 +503,138 @@ class LifetimeParser:
             self.process_last_commit()
             if self.debug_reconstruction or self.args.churn_dir:
                 self.reconstruct()
+            elif self.args.file_metrics:
+                self.dump_file_metrics()
             else:
                 self.dump_alive()
         finally:
             self.reader.close()
             if self.growth_file is not None:
                 self.growth_file.close()
+
+    def file_commits(self, file: str) -> Dict[str, str]:
+        """Return a dictionary from commit SHAs to the corresponding file name."""
+
+        args = [
+            "git",
+            "log",
+            "-C", "-C", "-M", "-M",
+            "--name-only",
+            "--pretty=format:%H",
+            "--follow",
+            "--",
+            file,
+        ]
+        self.debug_print_git(f"Run: {' '.join(args)}")
+        p = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+
+        sha_to_file: Dict[str, str] = dict()
+        line_number = 0
+        for line in p.stdout:
+            line = line.strip()
+            if line_number % 3 == 0:  # SHA record
+                sha = line
+            elif line_number % 3 == 1:  # file name
+                sha_to_file[sha] = line
+            line_number += 1
+
+        p.wait()
+        return sha_to_file
+
+    def stream_git_history(self, file: str=None) -> Iterator[str]:
+        """
+        Yields lines from `git show` / `git diff` for commits touching `file`,
+        in topo order (daglp assumed installed), taking into account renames.
+        """
+
+        # Obtaim map for this file's commits to the corresponding file name.
+        # The file name may differ due to renames.
+        if file:
+            sha_to_file = self.file_commits(file)
+
+        # Create the longest path through all the repo's commits.
+        # git-log | daglp
+
+        # Log in topological order as expexted by daglp
+        log = subprocess.Popen(
+            ["git", "log", "--topo-order", "--pretty=format:%H %at %P"],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+
+        # Obtain the DAG's longest path
+        daglp = subprocess.Popen(
+            ["daglp"],
+            stdin=log.stdout,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        log.stdout.close()
+
+        prev_sha = None
+        prev_file_name = None
+
+        for line in daglp.stdout:
+            parts = line.strip().split()
+
+            sha, ts = parts[0], parts[1]
+
+            # Filter for specific file if specified.
+            if file:
+                file_name = sha_to_file.get(sha, None)
+                # See if file was modified in this commit
+                if not file_name:
+                    continue
+
+            # Get the diff for this commit
+            if prev_sha is None:
+                # --- first commit ---
+                args = [
+                        "git",
+                        "show",
+                        "--pretty=tformat:commit %H %at",
+                        "--topo-order",
+                        "--reverse",
+                        "-U0",
+                        sha,
+                        "--",
+                    ]
+                if file:
+                    args += file_name
+            else:
+                # No --pretty commit header here, so construct it manually.
+                yield f"commit {sha} {ts}\n"
+                yield "\n"
+
+                # --- diff with prev_sha ---
+                args = [
+                        "git",
+                        "-c", "diff.renameLimit=30000",
+                        "diff",
+                        "-m", "-M", "-C", "-U0",
+                        f"{prev_sha}..{sha}",
+                        "--",
+                    ]
+                if file:
+                    args += [file_name, prev_file_name]
+            diff = subprocess.Popen(args, stdout=subprocess.PIPE, text=True)
+            self.debug_print_git(f"Run: {' '.join(args)}")
+
+            # --- stream output ---
+            for out_line in diff.stdout:
+                self.debug_print_git(f"Line {self.reader.line_number}: {out_line}", end="")
+                yield out_line
+
+            diff.wait()
+            prev_sha = sha
+            if file:
+                prev_file_name = file_name
+
+        daglp.wait()
 
     def process_commit_state(self):
         if self.hash is not None:
@@ -664,7 +846,7 @@ class LifetimeParser:
         try:
             old_start, old_end = range_parse(old_range)
             new_start, new_end = range_parse(new_range)
-        except LifetimeError:
+        except ProcessingError:
             self.bail_out("Expecting a diff range")
 
         line = self.reader.read_raw()
@@ -705,7 +887,7 @@ class LifetimeParser:
                 self.oref_changed_lifetimes.append(int(self.timestamp) - birth_timestamp)
             else:
                 print(
-                    f"Warning: {self.hash} line {self.reader.line_number} unknown line {self.old}:{i + 1}",
+                    f"Warning: {self.hash} line {self.reader.line_number} unencountered line {self.old}:{i + 1}",
                     file=sys.stderr,
                 )
             line = self.reader.read_raw()
@@ -794,7 +976,7 @@ class LifetimeParser:
 
         # Print records of deleted lines
         eol = f" {delta}\n" if self.args.delta else "\n"
-        if not self.args.file_stats:
+        if not self.args.file_metrics:
             for record in self.delete_records:
                 print(record, end=eol, file=self.out)
         self.delete_records = []
@@ -821,11 +1003,8 @@ class LifetimeParser:
                 for line in details.lines:
                     out.write(line if self.args.churn_dir else line[1:])
 
-    # Print birth timestamps of files that are still alive
     def dump_alive(self):
-        if self.args.file_stats:
-            self.dump_file_stats()
-            return
+        """Print birth timestamps of files that are still alive."""
         if self.args.compressed:
             self.print_out("END")
             eol = "\n"
@@ -843,7 +1022,7 @@ class LifetimeParser:
             for line in details.lines:
                 print(line, end=eol, file=self.out)
 
-    def dump_file_stats(self):
+    def dump_file_metrics(self):
         current_timestamp = int(self.timestamp)
         for path in sorted(self.flt):
             if path == "/dev/null":
@@ -864,7 +1043,7 @@ class LifetimeParser:
         context = self.current_line
         if context is None:
             context = "EOF"
-        raise LifetimeError(
+        raise ProcessingError(
             f"commit {self.hash} {self.timestamp}; line {self.reader.line_number}: "
             f"unexpected {context} ({expect})"
         )
@@ -939,36 +1118,76 @@ class LifetimeParser:
         return output_source_code(name, self.args.source_only)
 
 
-def build_argument_parser():
+def lifetime_argument_parser():
+    """Return a CLI parser for the original script used for research"""
     parser = argparse.ArgumentParser(
+        prog="lifetime",
         description="Explore line lifetime and churn"
     )
     parser.add_argument("-c", dest="compressed", action="store_true", help='Output in a compressed format: line death times can be obtained from commit markers and alive lines appear after a line marked END.')
-    parser.add_argument("-C", dest="churn_dir", metavar="dir", help="Reconstruct source lines preceded by churn counts")
+    parser.add_argument("-C", dest="churn_dir", metavar="dir", help="Reconstruct source files with lines preceded by churn count")
     parser.add_argument("-d", dest="delta", action="store_true", help="Report the LoC delta")
-    parser.add_argument("-D", dest="debug_options", metavar="opts", help="Debug as specified by the letters in opts")
     parser.add_argument("-e", dest="end_hash", metavar="SHA", help="End processing after the specified commit hash")
     parser.add_argument("-E", dest="redirect_output", action="store_true", help="Redirect output to stderr")
-    parser.add_argument("-f", dest="file_stats", action="store_true", help="List current files with churn and age metrics")
+    parser.add_argument("-f", dest="file_metrics", action="store_true", help="List current files with churn and age metrics")
     parser.add_argument("-g", dest="growth_file", metavar="file", help="Create a file with total LoC for each commit")
     parser.add_argument("-l", dest="line_details", action="store_true", help="Output number of token types contained in each line")
-    parser.add_argument("-q", dest="quiet", action="store_true", help="Quiet progress output")
     parser.add_argument("-s", dest="source_only", action="store_true", help="Report only source code files")
     parser.add_argument("-t", dest="tokens", action="store_true", help="Show tokens with lifetime")
     parser.add_argument("input_files", nargs="*")
     return parser
 
 
+def git_hot_argument_parser():
+    """Return a CLI parser for the git-hot Git extension."""
+
+    parser = argparse.ArgumentParser(
+        prog="git-hot",
+        description="Report code lifetime and churn.",
+        usage="%(prog)s [-h] [-d dir] [-q] [ref] [[--] path]",
+        add_help=True,
+    )
+
+    parser.add_argument(
+        "-d", "--dir",
+        metavar="dir",
+        dest="churn_dir",
+        help="Reconstruct source files with lines preceded by churn count",
+    )
+
+    parser.add_argument(
+        "ref",
+        nargs="?",
+        default=None,
+        help="Git reference",
+    )
+
+    parser.add_argument(
+        "path",
+        nargs="?",
+        help="Report line details for the specified file",
+    )
+    return parser
+
 def main(argv=None):
-    parser = build_argument_parser()
+    # The program offers two different CLIs. Choose based on invocation name.
+    if "git-hot" in sys.argv[0]:
+        parser = git_hot_argument_parser()
+    else:
+        parser = lifetime_argument_parser()
+
+    parser.add_argument("-q", "--quiet", dest="quiet", action="store_true",
+                        help="Quiet progress output")
+    parser.add_argument("-D", "--debug", dest="debug_options", metavar="opts",
+                        help="Debug as specified by the letters in opts")
     try:
         args = parser.parse_args(argv)
-        parser_instance = LifetimeParser(args)
-        parser_instance.run()
+        processor = Processor(args)
+        processor.run()
         return 0
     except SystemExit as exc:
         return int(exc.code)
-    except (Exception) as exc:
+    except ProcessingError as exc:
         print_stderr_line(f"Error: {exc}")
         return 1
 

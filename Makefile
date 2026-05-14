@@ -46,6 +46,7 @@ test-python: daglp
 	./sync-test-branches.sh
 	python3 -m unittest discover -s . -p 'test*.py'
 	TOOL=./lifetime.py ./runtest.sh
+	GIT_DIR=code-lifetime-test.git ./git-hot | diff - fixtures/metrics.out
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
 	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
 
