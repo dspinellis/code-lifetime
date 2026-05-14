@@ -1173,15 +1173,36 @@ def main(argv=None):
     # The program offers two different CLIs. Choose based on invocation name.
     if "git-hot" in sys.argv[0]:
         parser = git_hot_argument_parser()
+        git_hot = True
     else:
         parser = lifetime_argument_parser()
+        git_hot = False
 
     parser.add_argument("-q", "--quiet", dest="quiet", action="store_true",
                         help="Quiet progress output")
     parser.add_argument("-D", "--debug", dest="debug_options", metavar="opts",
                         help="Debug as specified by the letters in opts")
     try:
-        args = parser.parse_args(argv)
+        # Custom argument parsing for the Git "[ref] [[--] path]" convention
+        argv = sys.argv[1:]
+
+        if git_hot and  "--" in argv:
+            idx = argv.index("--")
+            pre = argv[:idx]
+            post = argv[idx + 1:]
+
+            if len(post) > 1:
+                parser.error("at most one path allowed after --")
+
+            args = parser.parse_args(pre)
+
+            if getattr(args, "path", None) is not None:
+                parser.error("path specified before --")
+
+            args.path = post[0] if post else None
+        else:
+            args = parser.parse_args(argv)
+
         processor = Processor(args)
         processor.run()
         return 0
