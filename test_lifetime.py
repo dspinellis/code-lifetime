@@ -17,6 +17,7 @@
 import io
 import os
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr
 from contextlib import redirect_stdout
@@ -26,6 +27,7 @@ from lifetime import hide_escaped_quotes
 from lifetime import line_details
 from lifetime import main
 from lifetime import output_source_code
+from lifetime import parse_main_args
 from lifetime import range_parse
 from lifetime import unescape
 from lifetime import unquote_unescape
@@ -143,9 +145,68 @@ index 1111111..2222222 100644
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 exit_code = main(["-q", "-f", path])
         finally:
-            os.unlink(path)
+            for _ in range(10):
+                try:
+                    os.unlink(path)
+                    break
+                except FileNotFoundError:
+                    break
+                except PermissionError:
+                    time.sleep(0.01)
         self.assertEqual(0, exit_code)
         self.assertEqual("    1     1     1 f\n", stdout.getvalue())
+
+
+class GitHotArgumentParsingTests(unittest.TestCase):
+    def parse_git_hot(self, argv):
+        return parse_main_args(argv, prog="git-hot")
+
+    def test_git_hot_invocation_forms(self):
+        cases = [
+            ([], None, None),
+            (["HEAD"], "HEAD", None),
+            (["--", "src/main.py"], None, "src/main.py"),
+            (["HEAD", "src/main.py"], "HEAD", "src/main.py"),
+            (["HEAD", "--", "src/main.py"], "HEAD", "src/main.py"),
+        ]
+        for argv, expected_ref, expected_path in cases:
+            with self.subTest(argv=argv):
+                args = self.parse_git_hot(argv)
+                self.assertEqual(expected_ref, args.ref)
+                self.assertEqual(expected_path, args.path)
+                self.assertFalse(args.quiet)
+                self.assertIsNone(args.debug_options)
+                self.assertIsNone(args.churn_dir)
+
+    def test_git_hot_indicative_arguments(self):
+        args = self.parse_git_hot(["-q", "--debug", "g", "--dir", "out", "HEAD", "--", "src/main.py"])
+        self.assertTrue(args.quiet)
+        self.assertEqual("g", args.debug_options)
+        self.assertEqual("out", args.churn_dir)
+        self.assertEqual("HEAD", args.ref)
+        self.assertEqual("src/main.py", args.path)
+
+        args = self.parse_git_hot(["--quiet", "-D", "HS", "-d", "recons", "--", "src/main.py"])
+        self.assertTrue(args.quiet)
+        self.assertEqual("HS", args.debug_options)
+        self.assertEqual("recons", args.churn_dir)
+        self.assertIsNone(args.ref)
+        self.assertEqual("src/main.py", args.path)
+
+    def test_git_hot_rejects_multiple_paths_after_separator(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.parse_git_hot(["HEAD", "--", "src/main.py", "src/other.py"])
+        self.assertEqual(2, raised.exception.code)
+
+    def test_git_hot_rejects_path_before_separator(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.parse_git_hot(["HEAD", "src/main.py", "--", "src/other.py"])
+        self.assertEqual(2, raised.exception.code)
+
+    def test_git_hot_help_exits_cleanly(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.parse_git_hot(["--help"])
+        self.assertEqual(0, raised.exception.code)
 
 
 if __name__ == "__main__":

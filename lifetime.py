@@ -1169,9 +1169,12 @@ def git_hot_argument_parser():
     )
     return parser
 
-def main(argv=None):
+def parse_main_args(argv=None, prog=None):
+    """Parse command-line arguments for the selected CLI variant."""
+
     # The program offers two different CLIs. Choose based on invocation name.
-    if "git-hot" in sys.argv[0]:
+    prog = sys.argv[0] if prog is None else prog
+    if "git-hot" in prog:
         parser = git_hot_argument_parser()
         git_hot = True
     else:
@@ -1182,27 +1185,32 @@ def main(argv=None):
                         help="Quiet progress output")
     parser.add_argument("-D", "--debug", dest="debug_options", metavar="opts",
                         help="Debug as specified by the letters in opts")
+
+    # Custom argument parsing for the Git "[ref] [[--] path]" convention
+    argv = sys.argv[1:] if argv is None else list(argv)
+
+    if git_hot and "--" in argv:
+        idx = argv.index("--")
+        pre = argv[:idx]
+        post = argv[idx + 1:]
+
+        if len(post) > 1:
+            parser.error("at most one path allowed after --")
+
+        args = parser.parse_args(pre)
+
+        if getattr(args, "path", None) is not None:
+            parser.error("path specified before --")
+
+        args.path = post[0] if post else None
+        return args
+
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
     try:
-        # Custom argument parsing for the Git "[ref] [[--] path]" convention
-        argv = sys.argv[1:]
-
-        if git_hot and  "--" in argv:
-            idx = argv.index("--")
-            pre = argv[:idx]
-            post = argv[idx + 1:]
-
-            if len(post) > 1:
-                parser.error("at most one path allowed after --")
-
-            args = parser.parse_args(pre)
-
-            if getattr(args, "path", None) is not None:
-                parser.error("path specified before --")
-
-            args.path = post[0] if post else None
-        else:
-            args = parser.parse_args(argv)
-
+        args = parse_main_args(argv)
         processor = Processor(args)
         processor.run()
         return 0
