@@ -37,40 +37,46 @@ class ProcessingError(Exception):
 class FileDetails:
     """Details tracked for a file while processing the diff stream."""
 
-    def __init__(self, path, lines=None, binary=False, metrics=None, changed_lifetimes=None):
+    def __init__(self, path, lines=None, binary=False, changed_lifetimes=None):
         self.path = path
         self.lines = list(lines) if lines is not None else []
         self.binary = binary
-        self.metrics = list(metrics) if metrics is not None else []
         self.changed_lifetimes = list(changed_lifetimes) if changed_lifetimes is not None else []
 
     def copy(self, path=None, changed_lifetimes=None):
         return FileDetails(
             self.path if path is None else path,
-            self.lines,
+            [line.copy() for line in self.lines],
             self.binary,
-            self.metrics,
             self.changed_lifetimes if changed_lifetimes is None else changed_lifetimes,
         )
 
 
 class LineDetails:
-    """Details about a line's composition."""
+    """Details about a line's content, lifetime metadata, and composition."""
 
     def __init__(
         self,
-        length,
-        startspace,
-        string,
-        comment,
-        comma,
-        bracket,
-        access,
-        assignment,
-        scope,
-        array,
-        logical,
+        content="",
+        birth_timestamp=None,
+        churn_count=0,
+        delta=None,
+        length=0,
+        startspace=0,
+        string=0,
+        comment=0,
+        comma=0,
+        bracket=0,
+        access=0,
+        assignment=0,
+        scope=0,
+        array=0,
+        logical=0,
     ):
+        self.content = content
+        self.birth_timestamp = birth_timestamp
+        self.churn_count = churn_count
+        self.delta = delta
         self.length = length
         self.startspace = startspace
         self.string = string
@@ -89,6 +95,48 @@ class LineDetails:
             f"{self.comma} {self.bracket} {self.access} {self.assignment} "
             f"{self.scope} {self.array} {self.logical}"
         )
+
+    def copy(self):
+        return LineDetails(
+            content=self.content,
+            birth_timestamp=self.birth_timestamp,
+            churn_count=self.churn_count,
+            delta=self.delta,
+            length=self.length,
+            startspace=self.startspace,
+            string=self.string,
+            comment=self.comment,
+            comma=self.comma,
+            bracket=self.bracket,
+            access=self.access,
+            assignment=self.assignment,
+            scope=self.scope,
+            array=self.array,
+            logical=self.logical,
+        )
+
+    def render_record(self, args):
+        parts = [str(self.birth_timestamp)]
+        if self.delta is not None:
+            parts.append(str(self.delta))
+        if args.line_details:
+            parts.extend(["L", str(self)])
+        elif args.tokens:
+            parts.append(self.content.rstrip("\n"))
+        return " ".join(parts)
+
+    def render_deleted(self, args, death_timestamp):
+        return f"{self.render_record(args)} {death_timestamp}"
+
+    def render_alive(self, args):
+        if args.compressed:
+            return self.render_record(args)
+        return f"{self.render_record(args)} alive NA"
+
+    def render_reconstructed(self, include_churn=False):
+        if include_churn:
+            return f"{self.churn_count}\t{self.content}"
+        return self.content
 
 
 class InputReader:
@@ -310,20 +358,19 @@ def line_details(line):
         r"==|[^>]>=|[^<]<=|!=|[^<]<[^<]|[^>\-]>[^>]|\!|\|\||\&\&|\bor\b|\band\b|\bnot\b|\bis\b",
         text,
     )
-    return str(
-        LineDetails(
-            length,
-            startspace,
-            string,
-            comment,
-            comma,
-            bracket,
-            access,
-            assignment,
-            scope,
-            array,
-            logical,
-        )
+    return LineDetails(
+        content=line,
+        length=length,
+        startspace=startspace,
+        string=string,
+        comment=comment,
+        comma=comma,
+        bracket=bracket,
+        access=access,
+        assignment=assignment,
+        scope=scope,
+        array=array,
+        logical=logical,
     )
 
 
@@ -454,8 +501,6 @@ class Processor:
         # Reference to copy of the old and new file contents
         self.oref = None
         self.nref = None
-        self.oref_metrics = None
-        self.nref_metrics = None
         self.oref_changed_lifetimes = None
         self.nref_changed_lifetimes = None
         self.current_line = None
@@ -503,6 +548,8 @@ class Processor:
             self.process_last_commit()
             if self.debug_reconstruction or self.args.churn_dir:
                 self.reconstruct()
+            elif self.dump_selected_file_details():
+                pass
             elif self.args.file_metrics:
                 self.dump_file_metrics()
             else:
@@ -699,20 +746,16 @@ class Processor:
 
         old_file = self.flt.get(self.old)
         new_file = self.flt.get(self.new)
-        self.oref = list(old_file.lines) if old_file is not None else []
-        self.oref_metrics = list(old_file.metrics) if old_file is not None else []
+        self.oref = [line.copy() for line in old_file.lines] if old_file is not None else []
         self.oref_changed_lifetimes = list(old_file.changed_lifetimes) if old_file is not None else []
         if self.old == self.new:
             self.nref = self.oref
-            self.nref_metrics = self.oref_metrics
             self.nref_changed_lifetimes = self.oref_changed_lifetimes
         elif new_file is not None:
-            self.nref = list(new_file.lines)
-            self.nref_metrics = list(new_file.metrics)
+            self.nref = [line.copy() for line in new_file.lines]
             self.nref_changed_lifetimes = list(new_file.changed_lifetimes)
         else:
             self.nref = []
-            self.nref_metrics = []
             self.nref_changed_lifetimes = []
 
         state = "EOF"
@@ -754,19 +797,16 @@ class Processor:
                     {
                         "op": "set",
                         "path": to_path,
-                        "lines": list(source.lines),
+                        "lines": [line.copy() for line in source.lines],
                         "binary": source.binary,
-                        "metrics": list(source.metrics),
                         "changed_lifetimes": list(source.changed_lifetimes),
                     }
                 )
-                self.oref = list(self.flt.get(self.old, FileDetails(self.old)).lines)
-                self.oref_metrics = list(self.flt.get(self.old, FileDetails(self.old)).metrics)
+                self.oref = [line.copy() for line in self.flt.get(self.old, FileDetails(self.old)).lines]
                 self.oref_changed_lifetimes = list(
                     self.flt.get(self.old, FileDetails(self.old)).changed_lifetimes
                 )
                 self.nref = self.oref
-                self.nref_metrics = self.oref_metrics
                 self.nref_changed_lifetimes = self.oref_changed_lifetimes
                 continue
             match = re.match(r"^copy to (.*)", line)
@@ -780,16 +820,14 @@ class Processor:
                     {
                         "op": "set",
                         "path": to_path,
-                        "lines": list(source.lines),
+                        "lines": [line.copy() for line in source.lines],
                         "binary": source.binary,
-                        "metrics": list(source.metrics),
                         "changed_lifetimes": [],
                     }
                 )
                 if self.args.growth_file and self.output_source_code(to_path):
                     self.loc += len(source.lines)
-                self.nref = list(self.flt.get(self.old, FileDetails(self.old)).lines)
-                self.nref_metrics = list(self.flt.get(self.old, FileDetails(self.old)).metrics)
+                self.nref = [line.copy() for line in self.flt.get(self.old, FileDetails(self.old)).lines]
                 self.nref_changed_lifetimes = []
                 continue
             if line.startswith("commit "):
@@ -800,7 +838,7 @@ class Processor:
                 return "diff"
             if line.startswith("new file mode "):
                 self.cc.append(
-                    {"op": "set", "path": self.old, "lines": [], "binary": False, "metrics": [], "changed_lifetimes": []}
+                    {"op": "set", "path": self.old, "lines": [], "binary": False, "changed_lifetimes": []}
                 )
                 continue
             if line.startswith("deleted file mode "):
@@ -810,9 +848,9 @@ class Processor:
                 if not self.debug_reconstruction and not self.args.churn_dir and self.output_source_code(self.old):
                     for line_record in self.flt.get(self.old, FileDetails(self.old)).lines:
                         if self.args.compressed:
-                            self.print_out(line_record)
+                            self.print_out(line_record.render_record(self.args))
                         else:
-                            self.delete_records.append(f"{line_record} {self.timestamp}")
+                            self.delete_records.append(line_record.render_deleted(self.args, self.timestamp))
                 continue
             if re.match(r"^Binary files ([^ ]*) and ([^ ]*) differ", line):
                 current = self.flt.get(self.old)
@@ -858,8 +896,7 @@ class Processor:
         old_file = self.flt.get(self.old)
         binary = old_file.binary if old_file is not None else False
         output = self.output_source_code(self.old)
-        delete_range = []  # Churn count and content of deleted lines
-        deleted_metrics = []
+        deleted_lines = []
         for i in range(old_start, old_end):
             if binary:
                 line = self.reader.read_raw()
@@ -871,20 +908,18 @@ class Processor:
                 self.loc -= 1
             pos = i + old_offset
             if 0 <= pos < len(self.oref):
-                birth_timestamp, churn_count = self.oref_metrics[pos]
+                deleted_line = self.oref[pos]
                 if self.debug_reconstruction:
                     # Verify that the -removed line matches the previous +recorded one.
-                    if self.oref[pos][1:] != line[1:]:
-                        self.bail_out(f"Expecting at({i} + {old_offset}) {self.oref[pos]}")
-                elif self.args.churn_dir:
-                    delete_range.append(self.oref[pos])
+                    if deleted_line.content != line[1:]:
+                        self.bail_out(f"Expecting at({i} + {old_offset}) {deleted_line.content}")
                 elif output:
                     if self.args.compressed:
-                        self.print_out(self.oref[pos])
+                        self.print_out(deleted_line.render_record(self.args))
                     else:
-                        self.delete_records.append(f"{self.oref[pos]} {self.timestamp}")
-                deleted_metrics.append((birth_timestamp, churn_count))
-                self.oref_changed_lifetimes.append(int(self.timestamp) - birth_timestamp)
+                        self.delete_records.append(deleted_line.render_deleted(self.args, self.timestamp))
+                deleted_lines.append(deleted_line.copy())
+                self.oref_changed_lifetimes.append(int(self.timestamp) - deleted_line.birth_timestamp)
             else:
                 print(
                     f"Warning: {self.hash} line {self.reader.line_number} unencountered line {self.old}:{i + 1}",
@@ -895,45 +930,41 @@ class Processor:
         self.debug_print_splice(f"before oref={len(self.oref) - 1} ns={old_start} len={remove_len}")
         if not binary and remove_len != 0:
             del self.oref[old_start + old_offset : old_start + old_offset + remove_len]
-            del self.oref_metrics[old_start + old_offset : old_start + old_offset + remove_len]
             if self.oref is not self.nref:
                 del self.nref[old_start + new_offset : old_start + new_offset + remove_len]
-                del self.nref_metrics[old_start + new_offset : old_start + new_offset + remove_len]
         self.debug_print_splice(f"after oref={len(self.oref) - 1}")
         if line is not None and line.startswith("\\ No newline at end of file"):
             line = self.reader.read_raw()
         add = []
-        add_metrics = []
         line_count = 0
         equal_length_change = old_end - old_start == new_end - new_start
         for i in range(new_start, new_end):
             if line is None or not line.startswith("+"):
                 self.current_line = chomp(line) if line is not None else None
                 self.bail_out("Expecting an added line")
-            if equal_length_change and line_count < len(deleted_metrics):
-                churn_count = deleted_metrics[line_count][1] + 1
+            if equal_length_change and line_count < len(deleted_lines):
+                churn_count = deleted_lines[line_count].churn_count + 1
             else:
                 churn_count = 0
-            if self.debug_reconstruction:
-                add.append(line)
-                add_metrics.append((int(self.timestamp), churn_count))
-            elif self.args.churn_dir:
-                if equal_length_change:
-                    # Increment count for single-line change.
-                    match = re.match(r"^(\d+)\t(.*)", delete_range[line_count])
-                    churn_count = int(match.group(1)) + 1
-                add.append(f"{churn_count}\t{line[1:]}")
-                add_metrics.append((int(self.timestamp), churn_count))
-            elif self.args.line_details:
-                add.append(f"{self.timestamp} L {line_details(line[1:])}")
-                add_metrics.append((int(self.timestamp), 0))
-            elif self.args.tokens:
-                tokinfo = re.sub(r"^.(.*)\n", r"\1", line)
-                add.append(f"{self.timestamp} {tokinfo}")
-                add_metrics.append((int(self.timestamp), 0))
-            else:
-                add.append(self.timestamp)
-                add_metrics.append((int(self.timestamp), churn_count))
+            new_line = LineDetails(
+                content=line[1:],
+                birth_timestamp=int(self.timestamp),
+                churn_count=churn_count,
+            )
+            if self.args.line_details:
+                counts = line_details(line[1:])
+                new_line.length = counts.length
+                new_line.startspace = counts.startspace
+                new_line.string = counts.string
+                new_line.comment = counts.comment
+                new_line.comma = counts.comma
+                new_line.bracket = counts.bracket
+                new_line.access = counts.access
+                new_line.assignment = counts.assignment
+                new_line.scope = counts.scope
+                new_line.array = counts.array
+                new_line.logical = counts.logical
+            add.append(new_line)
             if not binary and output:
                 self.loc += 1
             line_count += 1
@@ -942,7 +973,6 @@ class Processor:
         self.debug_print_splice(f"before nref={len(self.nref) - 1} ns={new_start} len={add_len}")
         if not binary and add_len > 0:
             self.nref[new_start:new_start] = add
-            self.nref_metrics[new_start:new_start] = add_metrics
         self.added_lines += add_len
         self.removed_lines += remove_len
         self.debug_print_splice(f"after nref={len(self.nref) - 1}")
@@ -1001,7 +1031,18 @@ class Processor:
                 os.makedirs(directory, exist_ok=True)
             with open(full_path, "w", encoding="utf-8", errors="surrogateescape", newline="") as out:
                 for line in details.lines:
-                    out.write(line if self.args.churn_dir else line[1:])
+                    out.write(line.render_reconstructed(include_churn=bool(self.args.churn_dir)))
+
+    def dump_selected_file_details(self):
+        """Write the reconstructed contents of a selected git-hot path to stdout."""
+        if getattr(self.args, "path", None) is None or self.args.churn_dir:
+            return False
+        for path, details in self.flt.items():
+            if path == "/dev/null" or details is None:
+                continue
+            for line in details.lines:
+                self.out.write(line.render_reconstructed())
+        return True
 
     def dump_alive(self):
         """Print birth timestamps of files that are still alive."""
@@ -1020,7 +1061,7 @@ class Processor:
             if not self.output_source_code(path):
                 continue
             for line in details.lines:
-                print(line, end=eol, file=self.out)
+                print(line.render_record(self.args), end=eol, file=self.out)
 
     def dump_file_metrics(self):
         current_timestamp = int(self.timestamp)
@@ -1032,10 +1073,10 @@ class Processor:
                 continue
             if not self.output_source_code(path):
                 continue
-            max_churn = max((churn for _, churn in details.metrics), default=0)
+            max_churn = max((line.churn_count for line in details.lines), default=0)
             changed_lifetime_days = median_rounded_days(details.changed_lifetimes)
             line_age_days = median_rounded_days(
-                [current_timestamp - birth_timestamp for birth_timestamp, _ in details.metrics]
+                [current_timestamp - line.birth_timestamp for line in details.lines]
             )
             print(f"{max_churn:5d} {changed_lifetime_days:5d} {line_age_days:5d} {path}", file=self.out)
 
@@ -1054,24 +1095,15 @@ class Processor:
             self.debug_print_commit_changes(f"Change ({rec['op']}) {rec['path']}")
             if rec["op"] == "set":
                 lines = rec["lines"]
-                metrics = rec.get("metrics", [])
                 # Mark lines coming from commits with the commit's size
                 if self.args.delta:
                     delta = self.loc - self.prev_loc
-                    for index, line in enumerate(lines):
-                        if self.args.tokens or self.args.line_details:
-                            lines[index] = re.sub(
-                                rf"^{re.escape(self.timestamp)} ([A-Z])",
-                                f"{self.timestamp} {delta} " + r"\1",
-                                line,
-                            )
-                        elif line == self.timestamp:
-                            lines[index] = f"{line} {delta}"
+                    for line in lines:
+                        line.delta = delta
                 self.flt[rec["path"]] = FileDetails(
                     rec["path"],
                     lines,
                     rec.get("binary", False),
-                    metrics,
                     rec.get("changed_lifetimes", self.flt.get(rec["path"], FileDetails(rec["path"])).changed_lifetimes),
                 )
             elif rec["op"] == "del":
@@ -1099,7 +1131,6 @@ class Processor:
                     "path": self.old,
                     "lines": self.oref,
                     "binary": old_binary,
-                    "metrics": self.oref_metrics,
                     "changed_lifetimes": self.oref_changed_lifetimes,
                 }
             )
@@ -1109,7 +1140,6 @@ class Processor:
                 "path": self.new,
                 "lines": self.nref,
                 "binary": new_binary,
-                "metrics": self.nref_metrics,
                 "changed_lifetimes": self.nref_changed_lifetimes,
             }
         )
