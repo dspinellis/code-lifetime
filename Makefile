@@ -46,11 +46,13 @@ test-python: daglp
 	diff -r churn.ok/ churn/
 	git clone ./code-lifetime-test-branch.git
 	./sync-test-branches.sh
-	python3 -m unittest discover -s . -p 'test*.py'
 	TOOL=./lifetime.py ./runtest.sh
 	GIT_DIR=code-lifetime-test.git ./git-hot | diff - fixtures/metrics.out
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
 	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
+
+test-pyton-unit:
+	python3 -m unittest discover -s . -p 'test*.py'
 
 clean:
 	rm -f daglp
