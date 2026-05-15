@@ -988,7 +988,7 @@ class Processor:
 
     # Reconstruct the state of the Git tree based on the log
     def reconstruct(self):
-        base_dir = self.args.churn_dir if self.args.churn_dir is not None else "RECONSTRUCTION"
+        base_dir = self.args.churn_dir or "RECONSTRUCTION"
         shutil.rmtree(base_dir, ignore_errors=True)
         for path, details in self.flt.items():
             if path == "/dev/null":
