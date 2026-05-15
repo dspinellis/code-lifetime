@@ -1173,7 +1173,7 @@ def parse_main_args(argv=None, prog=None):
     """Parse command-line arguments for the selected CLI variant."""
 
     # The program offers two different CLIs. Choose based on invocation name.
-    prog = sys.argv[0] if prog is None else prog
+    prog = prog or sys.argv[0]
     if "git-hot" in prog:
         parser = git_hot_argument_parser()
         git_hot = True

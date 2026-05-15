@@ -17,7 +17,6 @@
 import io
 import os
 import tempfile
-import time
 import unittest
 from contextlib import redirect_stderr
 from contextlib import redirect_stdout
@@ -145,14 +144,7 @@ index 1111111..2222222 100644
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 exit_code = main(["-q", "-f", path])
         finally:
-            for _ in range(10):
-                try:
-                    os.unlink(path)
-                    break
-                except FileNotFoundError:
-                    break
-                except PermissionError:
-                    time.sleep(0.01)
+            os.unlink(path)
         self.assertEqual(0, exit_code)
         self.assertEqual("    1     1     1 f\n", stdout.getvalue())
 
