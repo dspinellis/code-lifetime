@@ -133,9 +133,11 @@ class LineDetails:
             return self.render_record(args)
         return f"{self.render_record(args)} alive NA"
 
-    def render_reconstructed(self, include_churn=False):
+    def render_reconstructed(self, include_churn=False, churn_width=None):
         if include_churn:
-            return f"{self.churn_count}\t{self.content}"
+            if churn_width is None:
+                return f"{self.churn_count}\t{self.content}"
+            return f"{self.churn_count:>{churn_width}d} {self.content}"
         return self.content
 
 
@@ -1006,7 +1008,7 @@ class Processor:
 
         # Print records of deleted lines
         eol = f" {delta}\n" if self.args.delta else "\n"
-        if not self.args.file_metrics:
+        if not self.args.file_metrics and not self.selected_file_details_mode():
             for record in self.delete_records:
                 print(record, end=eol, file=self.out)
         self.delete_records = []
@@ -1030,19 +1032,34 @@ class Processor:
             if directory:
                 os.makedirs(directory, exist_ok=True)
             with open(full_path, "w", encoding="utf-8", errors="surrogateescape", newline="") as out:
-                for line in details.lines:
-                    out.write(line.render_reconstructed(include_churn=bool(self.args.churn_dir)))
+                self.write_reconstructed_lines(out, details, include_churn=bool(self.args.churn_dir))
+
+    def write_reconstructed_lines(self, out, details, include_churn=False, churn_width=None):
+        for line in details.lines:
+            out.write(
+                line.render_reconstructed(
+                    include_churn=include_churn,
+                    churn_width=churn_width,
+                )
+            )
 
     def dump_selected_file_details(self):
         """Write the reconstructed contents of a selected git-hot path to stdout."""
-        if getattr(self.args, "path", None) is None or self.args.churn_dir:
+        if not self.selected_file_details_mode():
             return False
         for path, details in self.flt.items():
             if path == "/dev/null" or details is None:
                 continue
-            for line in details.lines:
-                self.out.write(line.render_reconstructed())
+            self.write_reconstructed_lines(
+                self.out,
+                details,
+                include_churn=True,
+                churn_width=5,
+            )
         return True
+
+    def selected_file_details_mode(self):
+        return getattr(self.args, "path", None) is not None and not self.args.churn_dir
 
     def dump_alive(self):
         """Print birth timestamps of files that are still alive."""

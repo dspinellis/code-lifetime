@@ -27,6 +27,7 @@ from lifetime import line_details
 from lifetime import main
 from lifetime import output_source_code
 from lifetime import parse_main_args
+from lifetime import Processor
 from lifetime import range_parse
 from lifetime import unescape
 from lifetime import unquote_unescape
@@ -199,6 +200,44 @@ class GitHotArgumentParsingTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as raised:
             self.parse_git_hot(["--help"])
         self.assertEqual(0, raised.exception.code)
+
+
+class GitHotOutputTests(unittest.TestCase):
+    DIFF_STREAM = """commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 86400
+
+diff --git a/f b/f
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/f
+@@ -0,0 +1,2 @@
++one
++two
+commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 172800
+
+diff --git a/f b/f
+index 1111111..2222222 100644
+--- a/f
++++ b/f
+@@ -2 +2 @@
+-two
++two changed
+"""
+
+    class TestProcessor(Processor):
+        diff_stream = ""
+
+        def stream_git_history(self, file=None):
+            return iter(self.diff_stream.splitlines(True))
+
+    def test_git_hot_path_outputs_reconstructed_file_with_churn_counts(self):
+        args = parse_main_args(["-q", "--", "f"], prog="git-hot")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        self.TestProcessor.diff_stream = self.DIFF_STREAM
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.TestProcessor(args).run()
+        self.assertEqual("    0 one\n    1 two changed\n", stdout.getvalue())
 
 
 if __name__ == "__main__":
