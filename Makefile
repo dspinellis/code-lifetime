@@ -39,6 +39,8 @@ test-perl: daglp
 
 test-python: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch
+	(cd code-lifetime-test.git/ ; ../difflog.sh master) | ./lifetime.py -t 2>/dev/null | sort  | diff fixtures/tokens.out  -
+	(cd code-lifetime-test.git/ ; ../difflog.sh master) | ./lifetime.py -l 2>/dev/null | sort  | diff fixtures/line-contents.out  -
 	git clone ./code-lifetime-test.git
 	cd code-lifetime-test && ../difflog.sh master | python3 ../lifetime.py -C ../churn
 	diff -r churn.ok/ churn/
