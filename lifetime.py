@@ -1511,20 +1511,6 @@ def git_hot_argument_parser():
     )
 
     parser.add_argument(
-        "--color",
-        choices=["always", "never"],
-        default=None,
-        help="Control colored output",
-    )
-
-    parser.add_argument(
-        "--color-domain",
-        choices=["churn", "age", "lifetime"],
-        default="churn",
-        help="Color lines by churn, age, or lifetime",
-    )
-
-    parser.add_argument(
         "ref",
         nargs="?",
         default=None,
@@ -1554,6 +1540,20 @@ def parse_main_args(argv=None, prog=None):
                         help="Quiet progress output")
     parser.add_argument("-D", "--debug", dest="debug_options", metavar="opts",
                         help="Debug as specified by the letters in opts")
+    parser.add_argument(
+        "--color",
+        choices=["always", "never"],
+        default=None,
+        help="Control colored output",
+    )
+
+    parser.add_argument(
+        "--color-domain",
+        choices=["churn", "age", "lifetime"],
+        default="churn",
+        help="Color lines by churn, age, or lifetime",
+    )
+
 
     # Custom argument parsing for the Git "[ref] [[--] path]" convention
     argv = sys.argv[1:] if argv is None else list(argv)

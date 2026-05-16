@@ -1,5 +1,5 @@
 #
-# Copyright 1996-2000 Diomidis Spinellis
+# Copyright 1996-2026 Diomidis Spinellis
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,11 +42,11 @@ test-python: daglp
 	(cd code-lifetime-test.git/ ; ../difflog.sh master) | ./lifetime.py -t 2>/dev/null | sort  | diff fixtures/tokens.out  -
 	(cd code-lifetime-test.git/ ; ../difflog.sh master) | ./lifetime.py -l 2>/dev/null | sort  | diff fixtures/line-contents.out  -
 	git clone ./code-lifetime-test.git
-	cd code-lifetime-test && ../difflog.sh master | python3 ../lifetime.py -C ../churn
+	cd code-lifetime-test && ../difflog.sh master | python3 ../lifetime.py --color never -C ../churn
 	diff -r churn.ok/ churn/
 	git clone ./code-lifetime-test-branch.git
 	./sync-test-branches.sh
-	TOOL=./lifetime.py ./runtest.sh
+	TOOL='./lifetime.py --color never' ./runtest.sh
 	GIT_DIR=code-lifetime-test.git ./git-hot | diff - fixtures/metrics.out
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
 	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
