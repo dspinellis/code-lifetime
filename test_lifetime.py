@@ -20,6 +20,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 from lifetime import ESCAPED_QUOTE
 from lifetime import hide_escaped_quotes
@@ -292,6 +293,36 @@ index 1111111..2222222 100644
         self.assertEqual(
             "1 1970-01-02 aaaaaaa one\n0 1970-01-03 bbbbbbb two changed\n",
             stdout.getvalue(),
+        )
+
+    def test_git_hot_reports_line_format_errors(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("sys.argv", ["git-hot"]), patch.object(
+            Processor, "stream_git_history", return_value=iter(self.DIFF_STREAM.splitlines(True))
+        ):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = main(["-q", "--format", "{1/0} {line}", "--", "f"])
+        self.assertEqual(1, exit_code)
+        self.assertEqual("", stdout.getvalue())
+        self.assertEqual(
+            "Error: Invalid line output format string '{1/0} {line}': division by zero\n",
+            stderr.getvalue(),
+        )
+
+    def test_git_hot_reports_file_format_errors(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("sys.argv", ["git-hot"]), patch.object(
+            Processor, "stream_git_history", return_value=iter(self.DIFF_STREAM.splitlines(True))
+        ):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = main(["-q", "--format", "{missing_name}", "HEAD"])
+        self.assertEqual(1, exit_code)
+        self.assertEqual("", stdout.getvalue())
+        self.assertEqual(
+            "Error: Invalid file output format string '{missing_name}': name 'missing_name' is not defined\n",
+            stderr.getvalue(),
         )
 
 

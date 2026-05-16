@@ -422,6 +422,15 @@ def min_value(values):
     return 0 if not values else builtins.min(values)
 
 
+def evaluate_format(fmt, context, description):
+    try:
+        return eval(f"f{fmt!r}", {"__builtins__": {}}, context)
+    except Exception as exc:
+        raise ProcessingError(
+            f"Invalid {description} format string {fmt!r}: {exc}"
+        ) from None
+
+
 class LineFormatter:
     def __init__(self, fmt):
         self.fmt = fmt
@@ -450,7 +459,7 @@ class LineFormatter:
             "median": median,
             "mean": mean,
         }
-        return eval(f"f{self.fmt!r}", {"__builtins__": {}}, context) + "\n"
+        return evaluate_format(self.fmt, context, "line output") + "\n"
 
 
 class FileFormatter:
@@ -469,7 +478,7 @@ class FileFormatter:
             "mean": mean,
             "days": days,
         }
-        return eval(f"f{self.fmt!r}", {"__builtins__": {}}, context)
+        return evaluate_format(self.fmt, context, "file output")
 
 
 class Processor:
