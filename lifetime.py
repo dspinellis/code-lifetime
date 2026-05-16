@@ -39,18 +39,18 @@ class ProcessingError(Exception):
 class FileDetails:
     """Details tracked for a file while processing the diff stream."""
 
-    def __init__(self, path, lines=None, binary=False, changed_lifetimes=None):
+    def __init__(self, path, lines=None, binary=False, change_lifetimes=None):
         self.path = path
         self.lines = list(lines) if lines is not None else []
         self.binary = binary
-        self.changed_lifetimes = list(changed_lifetimes) if changed_lifetimes is not None else []
+        self.change_lifetimes = list(change_lifetimes) if change_lifetimes is not None else []
 
-    def copy(self, path=None, changed_lifetimes=None):
+    def copy(self, path=None, change_lifetimes=None):
         return FileDetails(
             self.path if path is None else path,
             [line.copy() for line in self.lines],
             self.binary,
-            self.changed_lifetimes if changed_lifetimes is None else changed_lifetimes,
+            self.change_lifetimes if change_lifetimes is None else change_lifetimes,
         )
 
 
@@ -433,8 +433,8 @@ class LineFormatter:
     def bind_file(self, details, current_timestamp):
         self.details = details
         self.current_timestamp = current_timestamp
-        self.lifetime_median = median(details.changed_lifetimes)
-        self.lifetime_mean = mean(details.changed_lifetimes)
+        self.lifetime_median = median(details.change_lifetimes)
+        self.lifetime_mean = mean(details.change_lifetimes)
 
     def format_line(self, line):
         age = 0 if line.birth_timestamp is None else int(self.current_timestamp - line.birth_timestamp)
@@ -456,12 +456,11 @@ class FileFormatter:
     def __init__(self, fmt):
         self.fmt = fmt
 
-    def format_file(self, path, churn, changed_lifetime, line_age):
+    def format_file(self, path, churn, change_lifetime, line_age):
         context = {
             "path": path,
             "churn": churn,
-            "changed_lifetime": changed_lifetime,
-            "change_lifetime": changed_lifetime,
+            "change_lifetime": change_lifetime,
             "line_age": line_age,
             "max": max_value,
             "min": min_value,
@@ -573,8 +572,8 @@ class Processor:
         # Reference to copy of the old and new file contents
         self.oref = None
         self.nref = None
-        self.oref_changed_lifetimes = None
-        self.nref_changed_lifetimes = None
+        self.oref_change_lifetimes = None
+        self.nref_change_lifetimes = None
         self.current_line = None
 
     def debug_option(self, opt):
@@ -819,16 +818,16 @@ class Processor:
         old_file = self.flt.get(self.old)
         new_file = self.flt.get(self.new)
         self.oref = [line.copy() for line in old_file.lines] if old_file is not None else []
-        self.oref_changed_lifetimes = list(old_file.changed_lifetimes) if old_file is not None else []
+        self.oref_change_lifetimes = list(old_file.change_lifetimes) if old_file is not None else []
         if self.old == self.new:
             self.nref = self.oref
-            self.nref_changed_lifetimes = self.oref_changed_lifetimes
+            self.nref_change_lifetimes = self.oref_change_lifetimes
         elif new_file is not None:
             self.nref = [line.copy() for line in new_file.lines]
-            self.nref_changed_lifetimes = list(new_file.changed_lifetimes)
+            self.nref_change_lifetimes = list(new_file.change_lifetimes)
         else:
             self.nref = []
-            self.nref_changed_lifetimes = []
+            self.nref_change_lifetimes = []
 
         state = "EOF"
         # Read the "extended header lines" to handle copies and renames
@@ -871,15 +870,15 @@ class Processor:
                         "path": to_path,
                         "lines": [line.copy() for line in source.lines],
                         "binary": source.binary,
-                        "changed_lifetimes": list(source.changed_lifetimes),
+                        "change_lifetimes": list(source.change_lifetimes),
                     }
                 )
                 self.oref = [line.copy() for line in self.flt.get(self.old, FileDetails(self.old)).lines]
-                self.oref_changed_lifetimes = list(
-                    self.flt.get(self.old, FileDetails(self.old)).changed_lifetimes
+                self.oref_change_lifetimes = list(
+                    self.flt.get(self.old, FileDetails(self.old)).change_lifetimes
                 )
                 self.nref = self.oref
-                self.nref_changed_lifetimes = self.oref_changed_lifetimes
+                self.nref_change_lifetimes = self.oref_change_lifetimes
                 continue
             match = re.match(r"^copy to (.*)", line)
             if match:
@@ -894,13 +893,13 @@ class Processor:
                         "path": to_path,
                         "lines": [line.copy() for line in source.lines],
                         "binary": source.binary,
-                        "changed_lifetimes": [],
+                        "change_lifetimes": [],
                     }
                 )
                 if self.args.growth_file and self.output_source_code(to_path):
                     self.loc += len(source.lines)
                 self.nref = [line.copy() for line in self.flt.get(self.old, FileDetails(self.old)).lines]
-                self.nref_changed_lifetimes = []
+                self.nref_change_lifetimes = []
                 continue
             if line.startswith("commit "):
                 self.current_line = line
@@ -910,7 +909,7 @@ class Processor:
                 return "diff"
             if line.startswith("new file mode "):
                 self.cc.append(
-                    {"op": "set", "path": self.old, "lines": [], "binary": False, "changed_lifetimes": []}
+                    {"op": "set", "path": self.old, "lines": [], "binary": False, "change_lifetimes": []}
                 )
                 continue
             if line.startswith("deleted file mode "):
@@ -991,7 +990,7 @@ class Processor:
                     else:
                         self.delete_records.append(deleted_line.render_deleted(self.args, self.timestamp))
                 deleted_lines.append(deleted_line.copy())
-                self.oref_changed_lifetimes.append(int(self.timestamp) - deleted_line.birth_timestamp)
+                self.oref_change_lifetimes.append(int(self.timestamp) - deleted_line.birth_timestamp)
             else:
                 print(
                     f"Warning: {self.hash} line {self.reader.line_number} unencountered line {self.old}:{i + 1}",
@@ -1150,10 +1149,10 @@ class Processor:
             if not self.output_source_code(path):
                 continue
             churn = [line.churn_count for line in details.lines]
-            changed_lifetime = list(details.changed_lifetimes)
+            change_lifetime = list(details.change_lifetimes)
             line_age = [current_timestamp - line.birth_timestamp for line in details.lines]
             print(
-                self.file_formatter.format_file(path, churn, changed_lifetime, line_age),
+                self.file_formatter.format_file(path, churn, change_lifetime, line_age),
                 file=self.out,
             )
 
@@ -1181,7 +1180,7 @@ class Processor:
                     rec["path"],
                     lines,
                     rec.get("binary", False),
-                    rec.get("changed_lifetimes", self.flt.get(rec["path"], FileDetails(rec["path"])).changed_lifetimes),
+                    rec.get("change_lifetimes", self.flt.get(rec["path"], FileDetails(rec["path"])).change_lifetimes),
                 )
             elif rec["op"] == "del":
                 self.flt.pop(rec["path"], None)
@@ -1208,7 +1207,7 @@ class Processor:
                     "path": self.old,
                     "lines": self.oref,
                     "binary": old_binary,
-                    "changed_lifetimes": self.oref_changed_lifetimes,
+                    "change_lifetimes": self.oref_change_lifetimes,
                 }
             )
         self.cc.append(
@@ -1217,7 +1216,7 @@ class Processor:
                 "path": self.new,
                 "lines": self.nref,
                 "binary": new_binary,
-                "changed_lifetimes": self.nref_changed_lifetimes,
+                "change_lifetimes": self.nref_change_lifetimes,
             }
         )
 
@@ -1237,7 +1236,7 @@ class Processor:
     def file_format(self):
         if getattr(self.args, "output_format", None):
             return self.args.output_format
-        return "{max(churn):5d} {days(median(changed_lifetime)):5d} {days(median(line_age)):5d} {path}"
+        return "{max(churn):5d} {days(median(change_lifetime)):5d} {days(median(line_age)):5d} {path}"
 
 
 def lifetime_argument_parser():
