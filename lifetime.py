@@ -33,6 +33,40 @@ from typing import Iterator, Dict
 VERSION = "0.1"
 ESCAPED_QUOTE = "\001"
 
+class Color():
+    def __init__(self, args):
+        if args.color == "always":
+            self.use_color = True
+        elif args.color == "never":
+            self.use_color = False
+        else: # Auto
+            self.use_color = sys.stdout.isatty()
+
+    def _ansi_fg(n: int) -> str:
+        """Return an ANSI escape setting foreground color to n."""
+        return f"\033[38;5;{n}m"
+
+    def reset(self) -> str:
+        """Reset any set color."""
+        if not self.use_color:
+            return ""
+        else:
+            return "\033[0m"
+
+    def get(self, quartile: int) -> str:
+        """Return a coloring string associated with the specified quartile."""
+        if not self.use_color:
+            return ""
+        if quartile == 1:         # Bottom 25th percentile
+            return _ansi_fg(33)   # Light blue; cold; few
+        elif quartile == 2:       # 25th-50th percentile
+            return _ansi_fg(10)   # Green; some
+        elif quartile == 3:       # 50th to 75th percentile
+            return _ansi_fg(11)   # Yellow; many
+        else:                     # Top 25th  percentile
+            return _ansi_fg(9)    # Bright red; red-hot; tons
+
+
 class ProcessingError(Exception):
     """Fatal processing error reported without an exception trace."""
 
