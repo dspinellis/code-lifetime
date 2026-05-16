@@ -427,14 +427,12 @@ class LineFormatter:
         self.fmt = fmt
         self.details = None
         self.current_timestamp = 0
-        self.lifetime_median = 0
-        self.lifetime_mean = 0
+        self.change_lifetimes = []
 
     def bind_file(self, details, current_timestamp):
         self.details = details
         self.current_timestamp = current_timestamp
-        self.lifetime_median = median(details.change_lifetimes)
-        self.lifetime_mean = mean(details.change_lifetimes)
+        self.change_lifetimes = details.change_lifetimes
 
     def format_line(self, line):
         age = 0 if line.birth_timestamp is None else int(self.current_timestamp - line.birth_timestamp)
@@ -442,12 +440,15 @@ class LineFormatter:
             "churn": line.churn_count,
             "age": age,
             "hash": line.birth_hash,
-            "lifetime_median": self.lifetime_median,
-            "lifetime_mean": self.lifetime_mean,
+            "change_lifetimes": self.change_lifetimes,
             "birthtime": line.birth_timestamp,
             "line": line.content.rstrip("\n"),
             "days": days,
             "isodate": isodate,
+            "max": max_value,
+            "min": min_value,
+            "median": median,
+            "mean": mean,
         }
         return eval(f"f{self.fmt!r}", {"__builtins__": {}}, context) + "\n"
 
@@ -456,12 +457,12 @@ class FileFormatter:
     def __init__(self, fmt):
         self.fmt = fmt
 
-    def format_file(self, path, churn, change_lifetime, line_age):
+    def format_file(self, path, churn, change_lifetimes, line_ages):
         context = {
             "path": path,
             "churn": churn,
-            "change_lifetime": change_lifetime,
-            "line_age": line_age,
+            "change_lifetimes": change_lifetimes,
+            "line_ages": line_ages,
             "max": max_value,
             "min": min_value,
             "median": median,
@@ -497,8 +498,18 @@ class Processor:
             self.args.delta = False
             self.args.end_hash = False
 
-        self.line_formatter = LineFormatter(self.line_format())
-        self.file_formatter = FileFormatter(self.file_format())
+        self.line_formatter = LineFormatter(
+            self.args.output_format
+            or ("{churn:>{5}d}  {line}"
+                if self.args.churn_dir or self.selected_file_details_mode()
+                else "{line}")
+        )
+
+        self.file_formatter = FileFormatter(self.args.output_format
+            or "{max(churn):5d} {days(median(change_lifetimes)):5d} "
+            "{days(median(line_ages)):5d} {path}"
+        )
+
         self.growth_file = None
 
         self.loc = 0
@@ -1149,10 +1160,10 @@ class Processor:
             if not self.output_source_code(path):
                 continue
             churn = [line.churn_count for line in details.lines]
-            change_lifetime = list(details.change_lifetimes)
-            line_age = [current_timestamp - line.birth_timestamp for line in details.lines]
+            change_lifetimes = list(details.change_lifetimes)
+            line_ages = [current_timestamp - line.birth_timestamp for line in details.lines]
             print(
-                self.file_formatter.format_file(path, churn, change_lifetime, line_age),
+                self.file_formatter.format_file(path, churn, change_lifetimes, line_ages),
                 file=self.out,
             )
 
@@ -1226,19 +1237,6 @@ class Processor:
     def selected_file_details_mode(self):
         return getattr(self.args, "path", None) is not None and not self.args.churn_dir
 
-    def line_format(self):
-        if getattr(self.args, "output_format", None):
-            return self.args.output_format
-        if self.args.churn_dir or self.selected_file_details_mode():
-            return "{churn:>{5}d}  {line}"
-        return "{line}"
-
-    def file_format(self):
-        if getattr(self.args, "output_format", None):
-            return self.args.output_format
-        return "{max(churn):5d} {days(median(change_lifetime)):5d} {days(median(line_age)):5d} {path}"
-
-
 def lifetime_argument_parser():
     """Return a CLI parser for the original script used for research"""
     parser = argparse.ArgumentParser(
@@ -1255,7 +1253,10 @@ def lifetime_argument_parser():
     parser.add_argument("-l", dest="line_details", action="store_true", help="Output number of token types contained in each line")
     parser.add_argument("-s", dest="source_only", action="store_true", help="Report only source code files")
     parser.add_argument("-t", dest="tokens", action="store_true", help="Show tokens with lifetime")
-    parser.add_argument("--format", dest="output_format", help="Format file output using a Python f-string")
+    parser.add_argument("--format", dest="output_format",
+                        default=None,
+                        help="Format output using a Python f-string",
+                        )
     parser.add_argument("input_files", nargs="*")
     return parser
 
@@ -1280,6 +1281,7 @@ def git_hot_argument_parser():
     parser.add_argument(
         "--format",
         dest="output_format",
+        default=None,
         help="Format file output using a Python f-string",
     )
 
