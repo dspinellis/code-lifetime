@@ -34,6 +34,28 @@ from lifetime import unescape
 from lifetime import unquote_unescape
 
 
+TEST_DIFF_STREAM = """commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 86400
+
+diff --git a/f b/f
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/f
+@@ -0,0 +1,2 @@
++one
++two
+commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 172800
+
+diff --git a/f b/f
+index 1111111..2222222 100644
+--- a/f
++++ b/f
+@@ -2 +2 @@
+-two
++two changed
+"""
+
+
 class ConvertedFunctionTests(unittest.TestCase):
     def test_line_details_existing_cases(self):
         cases = [
@@ -112,26 +134,6 @@ class ConvertedFunctionTests(unittest.TestCase):
         self.assertEqual('a' + ESCAPED_QUOTE + 'b"', hide_escaped_quotes('a\\"b"'))
 
     def test_file_stats_output(self):
-        diff_stream = """commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 86400
-
-diff --git a/f b/f
-new file mode 100644
-index 0000000..1111111
---- /dev/null
-+++ b/f
-@@ -0,0 +1,2 @@
-+one
-+two
-commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 172800
-
-diff --git a/f b/f
-index 1111111..2222222 100644
---- a/f
-+++ b/f
-@@ -2 +2 @@
--two
-+two changed
-"""
         fd, path = tempfile.mkstemp(
             prefix="test-file-stats-",
             suffix=".log",
@@ -140,7 +142,7 @@ index 1111111..2222222 100644
         os.close(fd)
         try:
             with open(path, "w", encoding="utf-8", newline="") as handle:
-                handle.write(diff_stream)
+                handle.write(TEST_DIFF_STREAM)
             stdout = io.StringIO()
             stderr = io.StringIO()
             with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -151,26 +153,6 @@ index 1111111..2222222 100644
         self.assertEqual("    1     1     1 f\n", stdout.getvalue())
 
     def test_file_stats_custom_format(self):
-        diff_stream = """commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 86400
-
-diff --git a/f b/f
-new file mode 100644
-index 0000000..1111111
---- /dev/null
-+++ b/f
-@@ -0,0 +1,2 @@
-+one
-+two
-commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 172800
-
-diff --git a/f b/f
-index 1111111..2222222 100644
---- a/f
-+++ b/f
-@@ -2 +2 @@
--two
-+two changed
-"""
         fd, path = tempfile.mkstemp(
             prefix="test-file-stats-",
             suffix=".log",
@@ -179,7 +161,7 @@ index 1111111..2222222 100644
         os.close(fd)
         try:
             with open(path, "w", encoding="utf-8", newline="") as handle:
-                handle.write(diff_stream)
+                handle.write(TEST_DIFF_STREAM)
             stdout = io.StringIO()
             stderr = io.StringIO()
             with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -244,27 +226,6 @@ class GitHotArgumentParsingTests(unittest.TestCase):
 
 
 class GitHotOutputTests(unittest.TestCase):
-    DIFF_STREAM = """commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 86400
-
-diff --git a/f b/f
-new file mode 100644
-index 0000000..1111111
---- /dev/null
-+++ b/f
-@@ -0,0 +1,2 @@
-+one
-+two
-commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 172800
-
-diff --git a/f b/f
-index 1111111..2222222 100644
---- a/f
-+++ b/f
-@@ -2 +2 @@
--two
-+two changed
-"""
-
     class TestProcessor(Processor):
         diff_stream = ""
 
@@ -275,7 +236,7 @@ index 1111111..2222222 100644
         args = parse_main_args(["-q", "--", "f"], prog="git-hot")
         stdout = io.StringIO()
         stderr = io.StringIO()
-        self.TestProcessor.diff_stream = self.DIFF_STREAM
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
         with redirect_stdout(stdout), redirect_stderr(stderr):
             self.TestProcessor(args).run()
         self.assertEqual("    0  one\n    1  two changed\n", stdout.getvalue())
@@ -287,7 +248,7 @@ index 1111111..2222222 100644
         )
         stdout = io.StringIO()
         stderr = io.StringIO()
-        self.TestProcessor.diff_stream = self.DIFF_STREAM
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
         with redirect_stdout(stdout), redirect_stderr(stderr):
             self.TestProcessor(args).run()
         self.assertEqual(
@@ -299,7 +260,7 @@ index 1111111..2222222 100644
         stdout = io.StringIO()
         stderr = io.StringIO()
         with patch("sys.argv", ["git-hot"]), patch.object(
-            Processor, "stream_git_history", return_value=iter(self.DIFF_STREAM.splitlines(True))
+            Processor, "stream_git_history", return_value=iter(TEST_DIFF_STREAM.splitlines(True))
         ):
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 exit_code = main(["-q", "--format", "{1/0} {line}", "--", "f"])
@@ -314,7 +275,7 @@ index 1111111..2222222 100644
         stdout = io.StringIO()
         stderr = io.StringIO()
         with patch("sys.argv", ["git-hot"]), patch.object(
-            Processor, "stream_git_history", return_value=iter(self.DIFF_STREAM.splitlines(True))
+            Processor, "stream_git_history", return_value=iter(TEST_DIFF_STREAM.splitlines(True))
         ):
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 exit_code = main(["-q", "--format", "{missing_name}", "HEAD"])
