@@ -547,7 +547,7 @@ class LineFormatter:
         self.file_line_change_lifetimes = [list(line.change_lifetimes) for line in details.lines]
         self.bind_repo(repo_line_churns, repo_line_ages, repo_line_change_lifetimes)
 
-    def default_line_quartile(self, line, age):
+    def default_quartile(self, line, age):
         """Color a reconstructed line against the current file's populations."""
         if self.color_domain == "age":
             return quartile_rank(age, self.file_line_ages)
@@ -558,7 +558,7 @@ class LineFormatter:
             )
         return quartile_rank(line.churn_count, self.file_line_churns)
 
-    def format_line(self, line):
+    def format(self, line):
         age = 0 if line.birth_timestamp is None else int(self.current_timestamp - line.birth_timestamp)
         context = {
             "churn": line.churn_count,
@@ -592,7 +592,7 @@ class LineFormatter:
             if self.color.use_color:
                 rendered += self.color.reset()
         elif self.color.use_color:
-            rendered = self.color.wrap(rendered, self.default_line_quartile(line, age))
+            rendered = self.color.wrap(rendered, self.default_quartile(line, age))
         return rendered + "\n"
 
 
@@ -611,7 +611,7 @@ class FileFormatter:
         self.repo_line_ages = repo_line_ages
         self.repo_line_change_lifetimes = repo_line_change_lifetimes
 
-    def default_file_quartile(self, churns, change_lifetimes, ages):
+    def default_quartile(self, churns, change_lifetimes, ages):
         """Color a file-metrics line against the repository's file populations."""
         if self.color_domain == "age":
             return quartile_rank(
@@ -631,7 +631,7 @@ class FileFormatter:
             list(map(max_value, self.repo_line_churns)),
         )
 
-    def format_file(self, path, churns, change_lifetimes, ages):
+    def format(self, path, churns, change_lifetimes, ages):
         context = {
             "path": path,
             "churn": churns,
@@ -663,7 +663,7 @@ class FileFormatter:
             if self.color.use_color:
                 rendered += self.color.reset()
         elif self.color.use_color:
-            rendered = self.color.wrap(rendered, self.default_file_quartile(churns, change_lifetimes, ages))
+            rendered = self.color.wrap(rendered, self.default_quartile(churns, change_lifetimes, ages))
         return rendered
 
 
@@ -1329,7 +1329,7 @@ class Processor:
             repo_line_change_lifetimes,
         )
         for line in details.lines:
-            out.write(self.line_formatter.format_line(line))
+            out.write(self.line_formatter.format(line))
 
     def dump_selected_file_details(self):
         """Write the reconstructed contents of a selected git-hot path to stdout."""
@@ -1376,7 +1376,7 @@ class Processor:
             change_lifetimes = list(details.change_lifetimes)
             ages = [current_timestamp - line.birth_timestamp for line in details.lines]
             print(
-                self.file_formatter.format_file(path, churns, change_lifetimes, ages),
+                self.file_formatter.format(path, churns, change_lifetimes, ages),
                 file=self.out,
             )
 
