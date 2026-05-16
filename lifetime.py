@@ -1204,8 +1204,6 @@ class Processor:
         if getattr(self.args, "output_format", None):
             return self.args.output_format
         if self.args.churn_dir or self.selected_file_details_mode():
-            if not self.git_hot_cli:
-                return "{churn}\t{line}"
             return "{churn:>{5}d}  {line}"
         return "{line}"
 
