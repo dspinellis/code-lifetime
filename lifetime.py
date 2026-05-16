@@ -26,6 +26,7 @@ import datetime
 import os
 import re
 import shutil
+import shlex
 import statistics
 import subprocess
 import sys
@@ -666,7 +667,7 @@ class FileFormatter:
             rendered = self.color.wrap(rendered, self.default_quartile(churns, change_lifetimes, ages))
         return rendered
 
-def get_paged_output():
+def get_paged_output(use_color=False):
     """Return a stream that outputs to a color-supporting pager
     as specified by Git configuration."""
     use_pager = sys.stdout.isatty()
@@ -704,6 +705,7 @@ class Processor:
     def __init__(self, args):
         self.args = args
         self.git_hot_cli = not hasattr(args, "input_files")
+        self.pager_proc = None
         if hasattr(args, "input_files"):
             # lifetime.py CLI: Read the output of difflog.sh.
             self.reader = InputReader.from_paths(args.input_files)
@@ -717,7 +719,6 @@ class Processor:
             self.reader = InputReader.from_iterator(
                 self.stream_git_history(args.path))
             self.args.file_metrics = (args.path is None)
-            self.out = sys.stdout
             self.args.growth_file = None
             self.args.compressed = False
             self.args.source_only = False
@@ -727,6 +728,10 @@ class Processor:
             self.args.end_hash = False
 
         self.color = Color(args)
+        if self.git_hot_cli:
+            self.out, self.pager_proc = get_paged_output(self.color.use_color)
+        else:
+            self.out = sys.stderr if args.redirect_output else sys.stdout
         self.line_formatter = LineFormatter(
             self.args.output_format
             or ("{churn:>{5}d}  {line}"
@@ -871,6 +876,9 @@ class Processor:
             self.reader.close()
             if self.growth_file is not None:
                 self.growth_file.close()
+            if self.pager_proc:
+                self.out.close()
+                self.pager_proc.wait()
 
     def file_commits(self, file: str) -> Dict[str, str]:
         """Return a dictionary from commit SHAs to the corresponding file name."""

@@ -364,6 +364,24 @@ class GitHotOutputTests(unittest.TestCase):
             self.TestProcessor(args).run()
         self.assertEqual("\033[38;5;33mf 1\033[0m\n", stdout.getvalue())
 
+    def test_git_hot_closes_and_waits_for_pager(self):
+        args = parse_main_args(["-q", "HEAD"], prog="git-hot")
+        pager_out = io.StringIO()
+
+        class PagerProc:
+            def __init__(self):
+                self.wait_called = False
+
+            def wait(self):
+                self.wait_called = True
+
+        pager_proc = PagerProc()
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
+        with patch("lifetime.get_paged_output", return_value=(pager_out, pager_proc)):
+            self.TestProcessor(args).run()
+        self.assertTrue(pager_out.closed)
+        self.assertTrue(pager_proc.wait_called)
+
     def test_git_hot_reports_line_format_errors(self):
         stdout = io.StringIO()
         stderr = io.StringIO()
