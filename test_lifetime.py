@@ -149,6 +149,45 @@ index 1111111..2222222 100644
         self.assertEqual(0, exit_code)
         self.assertEqual("    1     1     1 f\n", stdout.getvalue())
 
+    def test_file_stats_custom_format(self):
+        diff_stream = """commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 86400
+
+diff --git a/f b/f
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/f
+@@ -0,0 +1,2 @@
++one
++two
+commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 172800
+
+diff --git a/f b/f
+index 1111111..2222222 100644
+--- a/f
++++ b/f
+@@ -2 +2 @@
+-two
++two changed
+"""
+        fd, path = tempfile.mkstemp(
+            prefix="test-file-stats-",
+            suffix=".log",
+            dir=os.getcwd(),
+        )
+        os.close(fd)
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(diff_stream)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = main(["-q", "-f", "--format", "{path} {max(churn)} {days(mean(line_age))}", path])
+        finally:
+            os.unlink(path)
+        self.assertEqual(0, exit_code)
+        self.assertEqual("f 1 1\n", stdout.getvalue())
+
 
 class GitHotArgumentParsingTests(unittest.TestCase):
     def parse_git_hot(self, argv):

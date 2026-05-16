@@ -21,6 +21,7 @@
 #
 
 import argparse
+import builtins
 import datetime
 import os
 import re
@@ -413,6 +414,22 @@ def mean_seconds(values):
     return int(sum(values) / len(values))
 
 
+def median(values):
+    return median_seconds(values)
+
+
+def mean(values):
+    return mean_seconds(values)
+
+
+def max_value(values):
+    return 0 if not values else builtins.max(values)
+
+
+def min_value(values):
+    return 0 if not values else builtins.min(values)
+
+
 def median_rounded_days(values):
     return round_days(median_seconds(values))
 
@@ -447,6 +464,26 @@ class LineFormatter:
         return eval(f"f{self.fmt!r}", {"__builtins__": {}}, context) + "\n"
 
 
+class FileFormatter:
+    def __init__(self, fmt):
+        self.fmt = fmt
+
+    def format_file(self, path, churn, changed_lifetime, line_age):
+        context = {
+            "path": path,
+            "churn": churn,
+            "changed_lifetime": changed_lifetime,
+            "change_lifetime": changed_lifetime,
+            "line_age": line_age,
+            "max": max_value,
+            "min": min_value,
+            "median": median,
+            "mean": mean,
+            "days": days,
+        }
+        return eval(f"f{self.fmt!r}", {"__builtins__": {}}, context)
+
+
 class Processor:
     def __init__(self, args):
         self.args = args
@@ -474,6 +511,7 @@ class Processor:
             self.args.end_hash = False
 
         self.line_formatter = LineFormatter(self.line_format())
+        self.file_formatter = FileFormatter(self.file_format())
         self.growth_file = None
 
         self.loc = 0
@@ -1123,12 +1161,13 @@ class Processor:
                 continue
             if not self.output_source_code(path):
                 continue
-            max_churn = max((line.churn_count for line in details.lines), default=0)
-            changed_lifetime_days = median_rounded_days(details.changed_lifetimes)
-            line_age_days = median_rounded_days(
-                [current_timestamp - line.birth_timestamp for line in details.lines]
+            churn = [line.churn_count for line in details.lines]
+            changed_lifetime = list(details.changed_lifetimes)
+            line_age = [current_timestamp - line.birth_timestamp for line in details.lines]
+            print(
+                self.file_formatter.format_file(path, churn, changed_lifetime, line_age),
+                file=self.out,
             )
-            print(f"{max_churn:5d} {changed_lifetime_days:5d} {line_age_days:5d} {path}", file=self.out)
 
     def bail_out(self, expect):
         context = self.current_line
@@ -1207,6 +1246,11 @@ class Processor:
             return "{churn:>{5}d}  {line}"
         return "{line}"
 
+    def file_format(self):
+        if getattr(self.args, "output_format", None):
+            return self.args.output_format
+        return "{max(churn):5d} {days(median(changed_lifetime)):5d} {days(median(line_age)):5d} {path}"
+
 
 def lifetime_argument_parser():
     """Return a CLI parser for the original script used for research"""
@@ -1224,7 +1268,7 @@ def lifetime_argument_parser():
     parser.add_argument("-l", dest="line_details", action="store_true", help="Output number of token types contained in each line")
     parser.add_argument("-s", dest="source_only", action="store_true", help="Report only source code files")
     parser.add_argument("-t", dest="tokens", action="store_true", help="Show tokens with lifetime")
-    parser.add_argument("--format", dest="output_format", help="Format reconstructed file output using a Python f-string")
+    parser.add_argument("--format", dest="output_format", help="Format file output using a Python f-string")
     parser.add_argument("input_files", nargs="*")
     return parser
 
