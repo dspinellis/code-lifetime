@@ -174,7 +174,8 @@ class ConvertedFunctionTests(unittest.TestCase):
 
 class GitHotArgumentParsingTests(unittest.TestCase):
     def parse_git_hot(self, argv):
-        return parse_main_args(argv, prog="git-hot")
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            return parse_main_args(argv, prog="git-hot")
 
     def test_git_hot_invocation_forms(self):
         cases = [
