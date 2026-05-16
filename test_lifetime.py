@@ -172,10 +172,11 @@ class GitHotArgumentParsingTests(unittest.TestCase):
                 self.assertIsNone(args.churn_dir)
 
     def test_git_hot_indicative_arguments(self):
-        args = self.parse_git_hot(["-q", "--debug", "g", "--dir", "out", "HEAD", "--", "src/main.py"])
+        args = self.parse_git_hot(["-q", "--debug", "g", "--dir", "out", "--format", "{line}", "HEAD", "--", "src/main.py"])
         self.assertTrue(args.quiet)
         self.assertEqual("g", args.debug_options)
         self.assertEqual("out", args.churn_dir)
+        self.assertEqual("{line}", args.output_format)
         self.assertEqual("HEAD", args.ref)
         self.assertEqual("src/main.py", args.path)
 
@@ -237,7 +238,22 @@ index 1111111..2222222 100644
         self.TestProcessor.diff_stream = self.DIFF_STREAM
         with redirect_stdout(stdout), redirect_stderr(stderr):
             self.TestProcessor(args).run()
-        self.assertEqual("    0 one\n    1 two changed\n", stdout.getvalue())
+        self.assertEqual("    0  one\n    1  two changed\n", stdout.getvalue())
+
+    def test_git_hot_path_uses_custom_format(self):
+        args = parse_main_args(
+            ["-q", "--format", "{days(age)} {isodate(birthtime)} {hash[:7]} {line}", "--", "f"],
+            prog="git-hot",
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        self.TestProcessor.diff_stream = self.DIFF_STREAM
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.TestProcessor(args).run()
+        self.assertEqual(
+            "1 1970-01-02 aaaaaaa one\n0 1970-01-03 bbbbbbb two changed\n",
+            stdout.getvalue(),
+        )
 
 
 if __name__ == "__main__":

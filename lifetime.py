@@ -21,6 +21,7 @@
 #
 
 import argparse
+import datetime
 import os
 import re
 import shutil
@@ -59,6 +60,7 @@ class LineDetails:
         self,
         content="",
         birth_timestamp=None,
+        birth_hash=None,
         churn_count=0,
         delta=None,
         length=0,
@@ -75,6 +77,7 @@ class LineDetails:
     ):
         self.content = content
         self.birth_timestamp = birth_timestamp
+        self.birth_hash = birth_hash
         self.churn_count = churn_count
         self.delta = delta
         self.length = length
@@ -100,6 +103,7 @@ class LineDetails:
         return LineDetails(
             content=self.content,
             birth_timestamp=self.birth_timestamp,
+            birth_hash=self.birth_hash,
             churn_count=self.churn_count,
             delta=self.delta,
             length=self.length,
@@ -132,14 +136,6 @@ class LineDetails:
         if args.compressed:
             return self.render_record(args)
         return f"{self.render_record(args)} alive NA"
-
-    def render_reconstructed(self, include_churn=False, churn_width=None):
-        if include_churn:
-            if churn_width is None:
-                return f"{self.churn_count}\t{self.content}"
-            return f"{self.churn_count:>{churn_width}d} {self.content}"
-        return self.content
-
 
 class InputReader:
     def __init__(self):
@@ -393,21 +389,68 @@ def round_days(seconds):
     return int((seconds / 86400.0) + 0.5)
 
 
-def median_rounded_days(values):
+def days(seconds):
+    return round_days(seconds)
+
+
+def isodate(epoch_seconds):
+    return datetime.datetime.utcfromtimestamp(epoch_seconds).strftime("%Y-%m-%d")
+
+
+def median_seconds(values):
     if not values:
         return 0
     ordered = sorted(values)
     middle = len(ordered) // 2
     if len(ordered) % 2:
-        median_seconds = ordered[middle]
-    else:
-        median_seconds = (ordered[middle - 1] + ordered[middle]) / 2.0
-    return round_days(median_seconds)
+        return ordered[middle]
+    return int((ordered[middle - 1] + ordered[middle]) / 2.0)
+
+
+def mean_seconds(values):
+    if not values:
+        return 0
+    return int(sum(values) / len(values))
+
+
+def median_rounded_days(values):
+    return round_days(median_seconds(values))
+
+
+class LineFormatter:
+    def __init__(self, fmt):
+        self.fmt = fmt
+        self.details = None
+        self.current_timestamp = 0
+        self.lifetime_median = 0
+        self.lifetime_mean = 0
+
+    def bind_file(self, details, current_timestamp):
+        self.details = details
+        self.current_timestamp = current_timestamp
+        self.lifetime_median = median_seconds(details.changed_lifetimes)
+        self.lifetime_mean = mean_seconds(details.changed_lifetimes)
+
+    def format_line(self, line):
+        age = 0 if line.birth_timestamp is None else int(self.current_timestamp - line.birth_timestamp)
+        context = {
+            "churn": line.churn_count,
+            "age": age,
+            "hash": line.birth_hash,
+            "lifetime_median": self.lifetime_median,
+            "lifetime_mean": self.lifetime_mean,
+            "birthtime": line.birth_timestamp,
+            "line": line.content.rstrip("\n"),
+            "days": days,
+            "isodate": isodate,
+        }
+        return eval(f"f{self.fmt!r}", {"__builtins__": {}}, context) + "\n"
 
 
 class Processor:
     def __init__(self, args):
         self.args = args
+        self.git_hot_cli = not hasattr(args, "input_files")
         if hasattr(args, "input_files"):
             # lifetime.py CLI: Read the output of difflog.sh.
             self.reader = InputReader.from_paths(args.input_files)
@@ -430,6 +473,7 @@ class Processor:
             self.args.delta = False
             self.args.end_hash = False
 
+        self.line_formatter = LineFormatter(self.line_format())
         self.growth_file = None
 
         self.loc = 0
@@ -951,6 +995,7 @@ class Processor:
             new_line = LineDetails(
                 content=line[1:],
                 birth_timestamp=int(self.timestamp),
+                birth_hash=self.hash,
                 churn_count=churn_count,
             )
             if self.args.line_details:
@@ -1032,16 +1077,12 @@ class Processor:
             if directory:
                 os.makedirs(directory, exist_ok=True)
             with open(full_path, "w", encoding="utf-8", errors="surrogateescape", newline="") as out:
-                self.write_reconstructed_lines(out, details, include_churn=bool(self.args.churn_dir))
+                self.write_reconstructed_lines(out, details)
 
-    def write_reconstructed_lines(self, out, details, include_churn=False, churn_width=None):
+    def write_reconstructed_lines(self, out, details):
+        self.line_formatter.bind_file(details, int(self.timestamp) if self.timestamp is not None else 0)
         for line in details.lines:
-            out.write(
-                line.render_reconstructed(
-                    include_churn=include_churn,
-                    churn_width=churn_width,
-                )
-            )
+            out.write(self.line_formatter.format_line(line))
 
     def dump_selected_file_details(self):
         """Write the reconstructed contents of a selected git-hot path to stdout."""
@@ -1050,16 +1091,8 @@ class Processor:
         for path, details in self.flt.items():
             if path == "/dev/null" or details is None:
                 continue
-            self.write_reconstructed_lines(
-                self.out,
-                details,
-                include_churn=True,
-                churn_width=5,
-            )
+            self.write_reconstructed_lines(self.out, details)
         return True
-
-    def selected_file_details_mode(self):
-        return getattr(self.args, "path", None) is not None and not self.args.churn_dir
 
     def dump_alive(self):
         """Print birth timestamps of files that are still alive."""
@@ -1164,6 +1197,18 @@ class Processor:
     def output_source_code(self, name):
         return output_source_code(name, self.args.source_only)
 
+    def selected_file_details_mode(self):
+        return getattr(self.args, "path", None) is not None and not self.args.churn_dir
+
+    def line_format(self):
+        if getattr(self.args, "output_format", None):
+            return self.args.output_format
+        if self.args.churn_dir or self.selected_file_details_mode():
+            if not self.git_hot_cli:
+                return "{churn}\t{line}"
+            return "{churn:>{5}d}  {line}"
+        return "{line}"
+
 
 def lifetime_argument_parser():
     """Return a CLI parser for the original script used for research"""
@@ -1181,6 +1226,7 @@ def lifetime_argument_parser():
     parser.add_argument("-l", dest="line_details", action="store_true", help="Output number of token types contained in each line")
     parser.add_argument("-s", dest="source_only", action="store_true", help="Report only source code files")
     parser.add_argument("-t", dest="tokens", action="store_true", help="Show tokens with lifetime")
+    parser.add_argument("--format", dest="output_format", help="Format reconstructed file output using a Python f-string")
     parser.add_argument("input_files", nargs="*")
     return parser
 
@@ -1200,6 +1246,12 @@ def git_hot_argument_parser():
         metavar="dir",
         dest="churn_dir",
         help="Reconstruct source files with lines preceded by churn count",
+    )
+
+    parser.add_argument(
+        "--format",
+        dest="output_format",
+        help="Format file output using a Python f-string",
     )
 
     parser.add_argument(
