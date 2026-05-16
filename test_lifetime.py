@@ -165,7 +165,7 @@ class ConvertedFunctionTests(unittest.TestCase):
             stdout = io.StringIO()
             stderr = io.StringIO()
             with redirect_stdout(stdout), redirect_stderr(stderr):
-                exit_code = main(["-q", "-f", "--format", "{path} {max(churn)} {days(mean(line_ages))}", path])
+                exit_code = main(["-q", "-f", "--format", "{path} {max(line_churns)} {days(mean(line_ages))}", path])
         finally:
             os.unlink(path)
         self.assertEqual(0, exit_code)

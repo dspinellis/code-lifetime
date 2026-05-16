@@ -500,12 +500,12 @@ class FileFormatter:
     def __init__(self, fmt):
         self.fmt = fmt
 
-    def format_file(self, path, churn, change_lifetimes, line_ages):
+    def format_file(self, path, churns, change_lifetimes, ages):
         context = {
             "path": path,
-            "churn": churn,
-            "change_lifetimes": change_lifetimes,
-            "line_ages": line_ages,
+            "line_churns": churns,
+            "line_change_lifetimes": change_lifetimes,
+            "line_ages": ages,
             "max": max_value,
             "min": min_value,
             "median": median,
@@ -549,7 +549,7 @@ class Processor:
         )
 
         self.file_formatter = FileFormatter(self.args.output_format
-            or "{max(churn):5d} {days(median(change_lifetimes)):5d} "
+            or "{max(line_churns):5d} {days(median(line_change_lifetimes)):5d} "
             "{days(median(line_ages)):5d} {path}"
         )
 
@@ -1202,11 +1202,11 @@ class Processor:
                 continue
             if not self.output_source_code(path):
                 continue
-            churn = [line.churn_count for line in details.lines]
+            churns = [line.churn_count for line in details.lines]
             change_lifetimes = list(details.change_lifetimes)
-            line_ages = [current_timestamp - line.birth_timestamp for line in details.lines]
+            ages = [current_timestamp - line.birth_timestamp for line in details.lines]
             print(
-                self.file_formatter.format_file(path, churn, change_lifetimes, line_ages),
+                self.file_formatter.format_file(path, churns, change_lifetimes, ages),
                 file=self.out,
             )
 
