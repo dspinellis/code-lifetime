@@ -666,6 +666,39 @@ class FileFormatter:
             rendered = self.color.wrap(rendered, self.default_quartile(churns, change_lifetimes, ages))
         return rendered
 
+def get_paged_output():
+    """Return a stream that outputs to a color-supporting pager
+    as specified by Git configuration."""
+    use_pager = sys.stdout.isatty()
+
+    if not use_pager:
+        return sys.stdout, None
+
+    pager = subprocess.check_output(
+        ["git", "var", "GIT_PAGER"],
+        text=True
+    ).strip()
+
+    env = os.environ.copy()
+
+    if use_color:
+        # Ensure less(1) will pass-through color escapes
+        pager_cmd = shlex.split(pager)
+        pager_exe = pager_cmd[0]
+
+        if os.path.basename(pager_exe) == "less":
+            env["LESS"] = env.get("LESS", "") + " -R"
+
+    p = subprocess.Popen(
+        pager,
+        stdin=subprocess.PIPE,
+        text=True,
+        env=env,
+        shell=True,
+    )
+
+    return p.stdin, p
+
 
 class Processor:
     def __init__(self, args):
