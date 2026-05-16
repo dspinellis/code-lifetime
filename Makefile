@@ -51,7 +51,7 @@ test-python: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
 	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
 
-test-pyton-unit:
+test-python-unit:
 	python3 -m unittest discover -s . -p 'test*.py'
 
 clean:
