@@ -23,12 +23,18 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from lifetime import ESCAPED_QUOTE
+from lifetime import Color
 from lifetime import hide_escaped_quotes
 from lifetime import line_details
 from lifetime import main
+from lifetime import max_value
+from lifetime import mean
+from lifetime import median
+from lifetime import min_value
 from lifetime import output_source_code
 from lifetime import parse_main_args
 from lifetime import Processor
+from lifetime import quartile_rank
 from lifetime import range_parse
 from lifetime import unescape
 from lifetime import unquote_unescape
@@ -172,6 +178,43 @@ class ConvertedFunctionTests(unittest.TestCase):
         self.assertEqual("f 1 1\n", stdout.getvalue())
 
 
+class FormatterHelperTests(unittest.TestCase):
+    def test_color_support(self):
+        always = type("Args", (), {"color": "always"})()
+        never = type("Args", (), {"color": "never"})()
+        self.assertEqual("\033[38;5;33m", Color(always).color(1))
+        self.assertEqual("\033[0m", Color(always).color(0))
+        self.assertEqual("", Color(never).color(4))
+
+    def test_quartile_rank(self):
+        population = [1, 2, 3, 4, 5, 6, 7, 8]
+        self.assertEqual(1, quartile_rank(1, population))
+        self.assertEqual(2, quartile_rank(3, population))
+        self.assertEqual(3, quartile_rank(5, population))
+        self.assertEqual(4, quartile_rank(8, population))
+        with self.assertRaises(TypeError):
+            quartile_rank([1, 2], population)
+
+    def test_aggregate_invocation_types(self):
+        cases = [
+            ("min", min_value, 1, 1, [[3], [4, 5]], [1, 3, 5]),
+            ("max", max_value, 5, 5, [[3], [4, 5]], [1, 3, 5]),
+            ("median", median, 3, 3, [[1, 3], [5, 7]], [1, 3, 5]),
+            ("mean", mean, 3, 3, [[1, 3], [5, 7]], [1, 3, 5]),
+        ]
+        for name, func, list_value, tuple_value, nested_value, sample in cases:
+            with self.subTest(name=name, invocation="list"):
+                self.assertEqual(list_value, func(sample))
+            with self.subTest(name=name, invocation="tuple"):
+                self.assertEqual(tuple_value, func(tuple(sample)))
+            with self.subTest(name=name, invocation="nested"):
+                with self.assertRaises(TypeError):
+                    func(nested_value)
+            with self.subTest(name=name, invocation="scalar"):
+                with self.assertRaises(TypeError):
+                    func(3)
+
+
 class GitHotArgumentParsingTests(unittest.TestCase):
     def parse_git_hot(self, argv):
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
@@ -195,11 +238,15 @@ class GitHotArgumentParsingTests(unittest.TestCase):
                 self.assertIsNone(args.churn_dir)
 
     def test_git_hot_indicative_arguments(self):
-        args = self.parse_git_hot(["-q", "--debug", "g", "--dir", "out", "--format", "{line}", "HEAD", "--", "src/main.py"])
+        args = self.parse_git_hot(
+            ["-q", "--debug", "g", "--dir", "out", "--format", "{line}", "--color", "always", "--color-domain", "age", "HEAD", "--", "src/main.py"]
+        )
         self.assertTrue(args.quiet)
         self.assertEqual("g", args.debug_options)
         self.assertEqual("out", args.churn_dir)
         self.assertEqual("{line}", args.output_format)
+        self.assertEqual("always", args.color)
+        self.assertEqual("age", args.color_domain)
         self.assertEqual("HEAD", args.ref)
         self.assertEqual("src/main.py", args.path)
 
@@ -256,6 +303,66 @@ class GitHotOutputTests(unittest.TestCase):
             "1 1970-01-02 aaaaaaa one\n0 1970-01-03 bbbbbbb two changed\n",
             stdout.getvalue(),
         )
+
+    def test_git_hot_path_uses_default_coloring(self):
+        args = parse_main_args(["-q", "--color", "always", "--", "f"], prog="git-hot")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.TestProcessor(args).run()
+        self.assertIn("\033[", stdout.getvalue())
+        self.assertIn("\033[0m", stdout.getvalue())
+
+    def test_git_hot_path_explicit_color_disables_default_coloring(self):
+        args = parse_main_args(
+            ["-q", "--color", "always", "--format", "{color(quartile_rank(churn, file_line_churns))}{line}", "--", "f"],
+            prog="git-hot",
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.TestProcessor(args).run()
+        self.assertEqual(
+            "\033[38;5;33mone\033[0m\n\033[38;5;9mtwo changed\033[0m\n",
+            stdout.getvalue(),
+        )
+
+    def test_git_hot_path_supports_color_reset_function(self):
+        args = parse_main_args(
+            ["-q", "--color", "always", "--format", "{color(4)}{line}{color_reset()}", "--", "f"],
+            prog="git-hot",
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.TestProcessor(args).run()
+        self.assertEqual(
+            "\033[38;5;9mone\033[0m\033[0m\n\033[38;5;9mtwo changed\033[0m\033[0m\n",
+            stdout.getvalue(),
+        )
+
+    def test_git_hot_file_output_supports_nested_aggregate_expression(self):
+        args = parse_main_args(
+            [
+                "-q",
+                "--color",
+                "always",
+                "--format",
+                "{color(quartile_rank(max(file_line_churns), list(map(max, repo_line_churns))))}"
+                "{path} {max(file_line_churns)}",
+                "HEAD",
+            ],
+            prog="git-hot",
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.TestProcessor(args).run()
+        self.assertEqual("\033[38;5;33mf 1\033[0m\n", stdout.getvalue())
 
     def test_git_hot_reports_line_format_errors(self):
         stdout = io.StringIO()

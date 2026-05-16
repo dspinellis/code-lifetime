@@ -26,6 +26,7 @@ import datetime
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 from typing import Iterator, Dict
@@ -35,13 +36,15 @@ ESCAPED_QUOTE = "\001"
 
 class Color():
     def __init__(self, args):
-        if args.color == "always":
+        color_mode = getattr(args, "color", None)
+        if color_mode == "always":
             self.use_color = True
-        elif args.color == "never":
+        elif color_mode == "never":
             self.use_color = False
-        else: # Auto
+        else:
             self.use_color = sys.stdout.isatty()
 
+    @staticmethod
     def _ansi_fg(n: int) -> str:
         """Return an ANSI escape setting foreground color to n."""
         return f"\033[38;5;{n}m"
@@ -57,14 +60,25 @@ class Color():
         """Return a coloring string associated with the specified quartile."""
         if not self.use_color:
             return ""
+        if quartile <= 0:
+            return self.reset()
         if quartile == 1:         # Bottom 25th percentile
-            return _ansi_fg(33)   # Light blue; cold; few
+            return self._ansi_fg(33)   # Light blue; cold; few
         elif quartile == 2:       # 25th-50th percentile
-            return _ansi_fg(10)   # Green; some
+            return self._ansi_fg(10)   # Green; some
         elif quartile == 3:       # 50th to 75th percentile
-            return _ansi_fg(11)   # Yellow; many
+            return self._ansi_fg(11)   # Yellow; many
         else:                     # Top 25th  percentile
-            return _ansi_fg(9)    # Bright red; red-hot; tons
+            return self._ansi_fg(9)    # Bright red; red-hot; tons
+
+    def color(self, quartile: int) -> str:
+        return self.get(quartile)
+
+    def wrap(self, text: str, quartile: int) -> str:
+        prefix = self.color(quartile)
+        if not prefix:
+            return text
+        return f"{prefix}{text}{self.reset()}"
 
 
 class ProcessingError(Exception):
@@ -97,6 +111,7 @@ class LineDetails:
         birth_timestamp=None,
         birth_hash=None,
         churn_count=0,
+        change_lifetimes=None,
         delta=None,
         length=0,
         startspace=0,
@@ -114,6 +129,7 @@ class LineDetails:
         self.birth_timestamp = birth_timestamp
         self.birth_hash = birth_hash
         self.churn_count = churn_count
+        self.change_lifetimes = list(change_lifetimes) if change_lifetimes is not None else []
         self.delta = delta
         self.length = length
         self.startspace = startspace
@@ -140,6 +156,7 @@ class LineDetails:
             birth_timestamp=self.birth_timestamp,
             birth_hash=self.birth_hash,
             churn_count=self.churn_count,
+            change_lifetimes=self.change_lifetimes,
             delta=self.delta,
             length=self.length,
             startspace=self.startspace,
@@ -432,10 +449,21 @@ def isodate(epoch_seconds):
     return datetime.datetime.utcfromtimestamp(epoch_seconds).strftime("%Y-%m-%d")
 
 
+def require_flat_values(values):
+    """Return a flat homogeneous sequence or raise for nested values."""
+    if not isinstance(values, (list, tuple)):
+        raise TypeError("aggregate functions require a flat sequence")
+    # Values are assumed to be homogeneous, so sampling the first is enough.
+    if values and isinstance(values[0], (list, tuple)):
+            raise TypeError("nested sequences require explicit aggregation")
+    return values
+
+
 def median(values):
-    if not values:
+    """Return the integer median of a flat sequence."""
+    ordered = sorted(require_flat_values(values))
+    if not ordered:
         return 0
-    ordered = sorted(values)
     middle = len(ordered) // 2
     if len(ordered) % 2:
         return ordered[middle]
@@ -443,17 +471,42 @@ def median(values):
 
 
 def mean(values):
+    """Return the integer mean of a flat sequence."""
+    values = require_flat_values(values)
     if not values:
         return 0
     return int(sum(values) / len(values))
 
 
 def max_value(values):
+    """Return the maximum value in a flat sequence."""
+    values = require_flat_values(values)
     return 0 if not values else builtins.max(values)
 
 
 def min_value(values):
+    """Return the minimum value in a flat sequence."""
+    values = require_flat_values(values)
     return 0 if not values else builtins.min(values)
+
+
+def quartile_rank(value, population):
+    """Rank value in the population's quartiles using statistical cut points."""
+    if isinstance(value, (list, tuple)):
+        raise TypeError("quartile rank requires a scalar value")
+    values = require_flat_values(population)
+    if not values:
+        return 1
+    if len(values) == 1:
+        return 1
+    quartiles = statistics.quantiles(values, n=4, method="inclusive")
+    if value <= quartiles[0]:
+        return 1
+    if value <= quartiles[1]:
+        return 2
+    if value <= quartiles[2]:
+        return 3
+    return 4
 
 
 def evaluate_format(fmt, context, description):
@@ -466,16 +519,44 @@ def evaluate_format(fmt, context, description):
 
 
 class LineFormatter:
-    def __init__(self, fmt):
+    def __init__(self, fmt, color, color_domain="churn"):
         self.fmt = fmt
-        self.details = None
+        self.color = color
+        self.color_domain = color_domain
+        self.explicit_color = "color(" in fmt
         self.current_timestamp = 0
-        self.change_lifetimes = []
+        self.file_change_lifetimes = []
+        self.file_line_churns = []
+        self.file_line_ages = []
+        self.file_line_change_lifetimes = []
+        self.repo_line_churns = []
+        self.repo_line_ages = []
+        self.repo_line_change_lifetimes = []
 
-    def bind_file(self, details, current_timestamp):
-        self.details = details
+    def bind_repo(self, repo_line_churns, repo_line_ages, repo_line_change_lifetimes):
+        self.repo_line_churns = repo_line_churns
+        self.repo_line_ages = repo_line_ages
+        self.repo_line_change_lifetimes = repo_line_change_lifetimes
+
+    def bind_file(self, details, current_timestamp, repo_line_churns, repo_line_ages, repo_line_change_lifetimes):
+        """Bind the current file and repo populations for line formatting."""
         self.current_timestamp = current_timestamp
-        self.change_lifetimes = details.change_lifetimes
+        self.file_change_lifetimes = details.change_lifetimes
+        self.file_line_churns = [line.churn_count for line in details.lines]
+        self.file_line_ages = [current_timestamp - line.birth_timestamp for line in details.lines]
+        self.file_line_change_lifetimes = [list(line.change_lifetimes) for line in details.lines]
+        self.bind_repo(repo_line_churns, repo_line_ages, repo_line_change_lifetimes)
+
+    def default_line_quartile(self, line, age):
+        """Color a reconstructed line against the current file's populations."""
+        if self.color_domain == "age":
+            return quartile_rank(age, self.file_line_ages)
+        if self.color_domain == "lifetime":
+            return quartile_rank(
+                median(line.change_lifetimes),
+                list(map(median, self.file_line_change_lifetimes)),
+            )
+        return quartile_rank(line.churn_count, self.file_line_churns)
 
     def format_line(self, line):
         age = 0 if line.birth_timestamp is None else int(self.current_timestamp - line.birth_timestamp)
@@ -483,36 +564,107 @@ class LineFormatter:
             "churn": line.churn_count,
             "age": age,
             "hash": line.birth_hash,
-            "change_lifetimes": self.change_lifetimes,
+            "change_lifetimes": line.change_lifetimes,
+            "lifetime_median": median(self.file_change_lifetimes),
+            "lifetime_mean": mean(self.file_change_lifetimes),
             "birthtime": line.birth_timestamp,
             "line": line.content.rstrip("\n"),
+            "file_line_churns": self.file_line_churns,
+            "file_line_ages": self.file_line_ages,
+            "file_line_change_lifetimes": self.file_line_change_lifetimes,
+            "repo_line_churns": self.repo_line_churns,
+            "repo_line_ages": self.repo_line_ages,
+            "repo_line_change_lifetimes": self.repo_line_change_lifetimes,
             "days": days,
             "isodate": isodate,
             "max": max_value,
             "min": min_value,
             "median": median,
             "mean": mean,
+            "quartile_rank": quartile_rank,
+            "color": self.color.color,
+            "color_reset": self.color.reset,
+            "list": list,
+            "map": map,
         }
-        return evaluate_format(self.fmt, context, "line output") + "\n"
+        rendered = evaluate_format(self.fmt, context, "line output")
+        if self.explicit_color:
+            if self.color.use_color:
+                rendered += self.color.reset()
+        elif self.color.use_color:
+            rendered = self.color.wrap(rendered, self.default_line_quartile(line, age))
+        return rendered + "\n"
 
 
 class FileFormatter:
-    def __init__(self, fmt):
+    def __init__(self, fmt, color, color_domain="churn"):
         self.fmt = fmt
+        self.color = color
+        self.color_domain = color_domain
+        self.explicit_color = "color(" in fmt
+        self.repo_line_churns = []
+        self.repo_line_ages = []
+        self.repo_line_change_lifetimes = []
+
+    def bind_repo(self, repo_line_churns, repo_line_ages, repo_line_change_lifetimes):
+        self.repo_line_churns = repo_line_churns
+        self.repo_line_ages = repo_line_ages
+        self.repo_line_change_lifetimes = repo_line_change_lifetimes
+
+    def default_file_quartile(self, churns, change_lifetimes, ages):
+        """Color a file-metrics line against the repository's file populations."""
+        if self.color_domain == "age":
+            return quartile_rank(
+                median(ages),
+                list(map(median, self.repo_line_ages)),
+            )
+        if self.color_domain == "lifetime":
+            return quartile_rank(
+                median(list(map(median, change_lifetimes))),
+                [
+                    median(list(map(median, file_change_lifetimes)))
+                    for file_change_lifetimes in self.repo_line_change_lifetimes
+                ],
+            )
+        return quartile_rank(
+            max_value(churns),
+            list(map(max_value, self.repo_line_churns)),
+        )
 
     def format_file(self, path, churns, change_lifetimes, ages):
         context = {
             "path": path,
+            "churn": churns,
+            "change_lifetime": change_lifetimes,
+            "changed_lifetime": change_lifetimes,
+            "line_age": ages,
             "line_churns": churns,
             "line_change_lifetimes": change_lifetimes,
             "line_ages": ages,
+            "file_line_churns": churns,
+            "file_line_change_lifetimes": change_lifetimes,
+            "file_line_ages": ages,
+            "repo_line_churns": self.repo_line_churns,
+            "repo_line_ages": self.repo_line_ages,
+            "repo_line_change_lifetimes": self.repo_line_change_lifetimes,
             "max": max_value,
             "min": min_value,
             "median": median,
             "mean": mean,
             "days": days,
+            "quartile_rank": quartile_rank,
+            "color": self.color.color,
+            "color_reset": self.color.reset,
+            "list": list,
+            "map": map,
         }
-        return evaluate_format(self.fmt, context, "file output")
+        rendered = evaluate_format(self.fmt, context, "file output")
+        if self.explicit_color:
+            if self.color.use_color:
+                rendered += self.color.reset()
+        elif self.color.use_color:
+            rendered = self.color.wrap(rendered, self.default_file_quartile(churns, change_lifetimes, ages))
+        return rendered
 
 
 class Processor:
@@ -541,16 +693,19 @@ class Processor:
             self.args.delta = False
             self.args.end_hash = False
 
+        self.color = Color(args)
         self.line_formatter = LineFormatter(
             self.args.output_format
             or ("{churn:>{5}d}  {line}"
                 if self.args.churn_dir or self.selected_file_details_mode()
                 else "{line}")
-        )
+        , self.color, getattr(self.args, "color_domain", "churn"))
 
         self.file_formatter = FileFormatter(self.args.output_format
-            or "{max(line_churns):5d} {days(median(line_change_lifetimes)):5d} "
-            "{days(median(line_ages)):5d} {path}"
+            or "{max(churn):5d} {days(median(changed_lifetime)):5d} "
+            "{days(median(line_age)):5d} {path}",
+            self.color,
+            getattr(self.args, "color_domain", "churn"),
         )
 
         self.growth_file = None
@@ -1068,14 +1223,19 @@ class Processor:
                 self.current_line = chomp(line) if line is not None else None
                 self.bail_out("Expecting an added line")
             if equal_length_change and line_count < len(deleted_lines):
-                churn_count = deleted_lines[line_count].churn_count + 1
+                prior_line = deleted_lines[line_count]
+                churn_count = prior_line.churn_count + 1
+                change_lifetimes = list(prior_line.change_lifetimes)
+                change_lifetimes.append(int(self.timestamp) - prior_line.birth_timestamp)
             else:
                 churn_count = 0
+                change_lifetimes = []
             new_line = LineDetails(
                 content=line[1:],
                 birth_timestamp=int(self.timestamp),
                 birth_hash=self.hash,
                 churn_count=churn_count,
+                change_lifetimes=change_lifetimes,
             )
             if self.args.line_details:
                 counts = line_details(line[1:])
@@ -1159,7 +1319,15 @@ class Processor:
                 self.write_reconstructed_lines(out, details)
 
     def write_reconstructed_lines(self, out, details):
-        self.line_formatter.bind_file(details, int(self.timestamp) if self.timestamp is not None else 0)
+        current_timestamp = int(self.timestamp) if self.timestamp is not None else 0
+        repo_line_churns, repo_line_ages, repo_line_change_lifetimes = self.repo_line_populations(current_timestamp)
+        self.line_formatter.bind_file(
+            details,
+            current_timestamp,
+            repo_line_churns,
+            repo_line_ages,
+            repo_line_change_lifetimes,
+        )
         for line in details.lines:
             out.write(self.line_formatter.format_line(line))
 
@@ -1194,6 +1362,8 @@ class Processor:
 
     def dump_file_metrics(self):
         current_timestamp = int(self.timestamp)
+        repo_line_churns, repo_line_ages, repo_line_change_lifetimes = self.repo_line_populations(current_timestamp)
+        self.file_formatter.bind_repo(repo_line_churns, repo_line_ages, repo_line_change_lifetimes)
         for path in sorted(self.flt):
             if path == "/dev/null":
                 continue
@@ -1209,6 +1379,18 @@ class Processor:
                 self.file_formatter.format_file(path, churns, change_lifetimes, ages),
                 file=self.out,
             )
+
+    def repo_line_populations(self, current_timestamp):
+        repo_line_churns = []
+        repo_line_ages = []
+        repo_line_change_lifetimes = []
+        for path, details in self.flt.items():
+            if path == "/dev/null" or details is None:
+                continue
+            repo_line_churns.append([line.churn_count for line in details.lines])
+            repo_line_ages.append([current_timestamp - line.birth_timestamp for line in details.lines])
+            repo_line_change_lifetimes.append([list(line.change_lifetimes) for line in details.lines])
+        return repo_line_churns, repo_line_ages, repo_line_change_lifetimes
 
     def bail_out(self, expect):
         context = self.current_line
@@ -1326,6 +1508,20 @@ def git_hot_argument_parser():
         dest="output_format",
         default=None,
         help="Format file output using a Python f-string",
+    )
+
+    parser.add_argument(
+        "--color",
+        choices=["always", "never"],
+        default=None,
+        help="Control colored output",
+    )
+
+    parser.add_argument(
+        "--color-domain",
+        choices=["churn", "age", "lifetime"],
+        default="churn",
+        help="Color lines by churn, age, or lifetime",
     )
 
     parser.add_argument(
