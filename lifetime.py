@@ -450,6 +450,15 @@ def isodate(epoch_seconds):
     return datetime.datetime.utcfromtimestamp(epoch_seconds).strftime("%Y-%m-%d")
 
 
+def utf8_surrogateescape_text():
+    """Return subprocess text-mode arguments matching the repo's I/O policy."""
+    return {
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "surrogateescape",
+    }
+
+
 def require_flat_values(values):
     """Return a flat homogeneous sequence or raise for nested values."""
     if not isinstance(values, (list, tuple)):
@@ -677,7 +686,7 @@ def get_paged_output(use_color=False):
 
     pager = subprocess.check_output(
         ["git", "var", "GIT_PAGER"],
-        text=True
+        **utf8_surrogateescape_text(),
     ).strip()
 
     env = os.environ.copy()
@@ -693,9 +702,9 @@ def get_paged_output(use_color=False):
     p = subprocess.Popen(
         pager,
         stdin=subprocess.PIPE,
-        text=True,
         env=env,
         shell=True,
+        **utf8_surrogateescape_text(),
     )
 
     return p.stdin, p
@@ -897,7 +906,7 @@ class Processor:
         p = subprocess.Popen(
             args,
             stdout=subprocess.PIPE,
-            text=True,
+            **utf8_surrogateescape_text(),
         )
 
         sha_to_file: Dict[str, str] = dict()
@@ -931,7 +940,7 @@ class Processor:
         log = subprocess.Popen(
             ["git", "log", "--topo-order", "--pretty=format:%H %at %P"],
             stdout=subprocess.PIPE,
-            text=True,
+            **utf8_surrogateescape_text(),
         )
 
         # Obtain the DAG's longest path
@@ -939,7 +948,7 @@ class Processor:
             ["daglp"],
             stdin=log.stdout,
             stdout=subprocess.PIPE,
-            text=True,
+            **utf8_surrogateescape_text(),
         )
         log.stdout.close()
 
@@ -989,7 +998,11 @@ class Processor:
                     ]
                 if file:
                     args += [file_name, prev_file_name]
-            diff = subprocess.Popen(args, stdout=subprocess.PIPE, text=True)
+            diff = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                **utf8_surrogateescape_text(),
+            )
             self.debug_print_git(f"Run: {' '.join(args)}")
 
             # --- stream output ---
