@@ -4,4 +4,4 @@
 	bare = true
 	ignorecase = true
 [remote "origin"]
-	url = https://github.com/dspinellis/code-lifetime-test.git
+	url = https://github.com/dspinellis/fixtures/code-lifetime-test-branch.git
