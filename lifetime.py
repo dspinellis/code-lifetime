@@ -398,7 +398,7 @@ def isodate(epoch_seconds):
     return datetime.datetime.utcfromtimestamp(epoch_seconds).strftime("%Y-%m-%d")
 
 
-def median_seconds(values):
+def median(values):
     if not values:
         return 0
     ordered = sorted(values)
@@ -408,18 +408,10 @@ def median_seconds(values):
     return int((ordered[middle - 1] + ordered[middle]) / 2.0)
 
 
-def mean_seconds(values):
+def mean(values):
     if not values:
         return 0
     return int(sum(values) / len(values))
-
-
-def median(values):
-    return median_seconds(values)
-
-
-def mean(values):
-    return mean_seconds(values)
 
 
 def max_value(values):
@@ -428,10 +420,6 @@ def max_value(values):
 
 def min_value(values):
     return 0 if not values else builtins.min(values)
-
-
-def median_rounded_days(values):
-    return round_days(median_seconds(values))
 
 
 class LineFormatter:
@@ -445,8 +433,8 @@ class LineFormatter:
     def bind_file(self, details, current_timestamp):
         self.details = details
         self.current_timestamp = current_timestamp
-        self.lifetime_median = median_seconds(details.changed_lifetimes)
-        self.lifetime_mean = mean_seconds(details.changed_lifetimes)
+        self.lifetime_median = median(details.changed_lifetimes)
+        self.lifetime_mean = mean(details.changed_lifetimes)
 
     def format_line(self, line):
         age = 0 if line.birth_timestamp is None else int(self.current_timestamp - line.birth_timestamp)
