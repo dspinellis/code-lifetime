@@ -278,6 +278,7 @@ class GitHotOutputTests(unittest.TestCase):
         diff_stream = ""
 
         def stream_git_history(self, file=None):
+            self.git_hot_total_commits = self.diff_stream.count("commit ")
             return iter(self.diff_stream.splitlines(True))
 
     def test_git_hot_path_outputs_reconstructed_file_with_churn_counts(self):
@@ -288,6 +289,15 @@ class GitHotOutputTests(unittest.TestCase):
         with redirect_stdout(stdout), redirect_stderr(stderr):
             self.TestProcessor(args).run()
         self.assertEqual("    0  one\n    1  two changed\n", stdout.getvalue())
+
+    def test_git_hot_reports_percentage_progress(self):
+        args = parse_main_args(["HEAD"], prog="git-hot")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.TestProcessor(args).run()
+        self.assertEqual("\r 50% (1/2)\r100% (2/2)\n", stderr.getvalue())
 
     def test_git_hot_path_uses_custom_format(self):
         args = parse_main_args(

@@ -715,6 +715,9 @@ class Processor:
         self.args = args
         self.git_hot_cli = not hasattr(args, "input_files")
         self.pager_proc = None
+        self.git_hot_total_commits = None
+        self.git_hot_completed_commits = 0
+        self.git_hot_progress_active = False
         if hasattr(args, "input_files"):
             # lifetime.py CLI: Read the output of difflog.sh.
             self.reader = InputReader.from_paths(args.input_files)
@@ -844,6 +847,22 @@ class Processor:
     def noop_print_out(self, text, end="\n"):
         pass
 
+    def report_progress(self):
+        if self.args.quiet or self.debug_reconstruction:
+            return
+        if self.git_hot_cli and self.git_hot_total_commits:
+            self.git_hot_completed_commits += 1
+            percent = int((self.git_hot_completed_commits * 100) / self.git_hot_total_commits)
+            print(
+                f"\r{percent:3d}% ({self.git_hot_completed_commits}/{self.git_hot_total_commits})",
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
+            self.git_hot_progress_active = True
+            return
+        print(f"commit {self.hash} {self.timestamp}", file=sys.stderr)
+
     def run(self):
         try:
             if self.args.growth_file:
@@ -885,6 +904,8 @@ class Processor:
             self.reader.close()
             if self.growth_file is not None:
                 self.growth_file.close()
+            if self.git_hot_progress_active:
+                print(file=sys.stderr, flush=True)
             if self.pager_proc:
                 self.out.close()
                 self.pager_proc.wait()
@@ -952,20 +973,22 @@ class Processor:
         )
         log.stdout.close()
 
+        commit_path = []
+        for line in daglp.stdout:
+            parts = line.strip().split()
+            sha, ts = parts[0], parts[1]
+            file_name = sha_to_file.get(sha, None) if file else None
+            if file and not file_name:
+                continue
+            commit_path.append((sha, ts, file_name))
+
+        daglp.wait()
+        self.git_hot_total_commits = len(commit_path)
+
         prev_sha = None
         prev_file_name = None
 
-        for line in daglp.stdout:
-            parts = line.strip().split()
-
-            sha, ts = parts[0], parts[1]
-
-            # Filter for specific file if specified.
-            if file:
-                file_name = sha_to_file.get(sha, None)
-                # See if file was modified in this commit
-                if not file_name:
-                    continue
+        for sha, ts, file_name in commit_path:
 
             # Get the diff for this commit
             if prev_sha is None:
@@ -1015,8 +1038,6 @@ class Processor:
             if file:
                 prev_file_name = file_name
 
-        daglp.wait()
-
     def process_commit_state(self):
         if self.hash is not None:
             self.process_last_commit()
@@ -1028,9 +1049,7 @@ class Processor:
             self.print_out(f"commit {self.hash} {self.timestamp}")
         else:
             self.debug_print_commit_header(f"commit {self.hash} {self.timestamp}")
-        # Report progress
-        if not self.debug_reconstruction and not self.args.quiet:
-            print(f"commit {self.hash} {self.timestamp}", file=sys.stderr)
+        self.report_progress()
 
         # Separator
         line = self.reader.read_raw()
