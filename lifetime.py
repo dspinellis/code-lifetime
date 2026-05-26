@@ -867,6 +867,20 @@ class Processor:
         """Finish the progress reporting output."""
         if self.git_hot_progress_active:
             print(", done.", file=sys.stderr, flush=True)
+            self.git_hot_progress_active = False
+
+    def checked_command_output(self, args):
+        """Return command stdout, raising ProcessingError with stderr on failure."""
+        self.debug_print_git(f"Run: {' '.join(args)}")
+        completed = subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            **utf8_surrogateescape_text(),
+        )
+        if completed.returncode != 0:
+            raise ProcessingError(completed.stderr.rstrip() or f"Command failed: {' '.join(args)}")
+        return completed.stdout
 
     def run(self):
         try:
@@ -927,16 +941,9 @@ class Processor:
             "--",
             file,
         ]
-        self.debug_print_git(f"Run: {' '.join(args)}")
-        p = subprocess.Popen(
-            args,
-            stdout=subprocess.PIPE,
-            **utf8_surrogateescape_text(),
-        )
-
         sha_to_file: Dict[str, str] = dict()
         line_number = 0
-        for line in p.stdout:
+        for line in self.checked_command_output(args).splitlines():
             line = line.strip()
             if line_number % 3 == 0:  # SHA record
                 sha = line
@@ -944,7 +951,6 @@ class Processor:
                 sha_to_file[sha] = line
             line_number += 1
 
-        p.wait()
         return sha_to_file
 
     def stream_git_history(self, file: str=None) -> Iterator[str]:
@@ -961,32 +967,28 @@ class Processor:
         # Create the longest path through all the repo's commits.
         # git-log | daglp
 
-        # Log in topological order as expexted by daglp
-        log = subprocess.Popen(
-            ["git", "log", "--topo-order", "--pretty=format:%H %at %P"],
-            stdout=subprocess.PIPE,
-            **utf8_surrogateescape_text(),
+        log_output = self.checked_command_output(
+            ["git", "log", "--topo-order", "--pretty=format:%H %at %P"]
         )
-
-        # Obtain the DAG's longest path
-        daglp = subprocess.Popen(
+        self.debug_print_git("Run: daglp")
+        daglp = subprocess.run(
             ["daglp"],
-            stdin=log.stdout,
+            input=log_output,
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             **utf8_surrogateescape_text(),
         )
-        log.stdout.close()
+        if daglp.returncode != 0:
+            raise ProcessingError(daglp.stderr.rstrip() or "daglp failed")
 
         commit_path = []
-        for line in daglp.stdout:
+        for line in daglp.stdout.splitlines():
             parts = line.strip().split()
             sha, ts = parts[0], parts[1]
             file_name = sha_to_file.get(sha, None) if file else None
             if file and not file_name:
                 continue
             commit_path.append((sha, ts, file_name))
-
-        daglp.wait()
         self.git_hot_total_commits = len(commit_path)
 
         prev_sha = None

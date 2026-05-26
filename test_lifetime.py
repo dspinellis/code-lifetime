@@ -16,6 +16,7 @@
 
 import io
 import os
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -33,6 +34,7 @@ from lifetime import median
 from lifetime import min_value
 from lifetime import output_source_code
 from lifetime import parse_main_args
+from lifetime import ProcessingError
 from lifetime import Processor
 from lifetime import quartile_rank
 from lifetime import range_parse
@@ -297,7 +299,10 @@ class GitHotOutputTests(unittest.TestCase):
         self.TestProcessor.diff_stream = TEST_DIFF_STREAM
         with redirect_stdout(stdout), redirect_stderr(stderr):
             self.TestProcessor(args).run()
-        self.assertEqual("\r 50% (1/2)\r100% (2/2)\n", stderr.getvalue())
+        self.assertEqual(
+            "\rProcessing commits:  50% (1/2)\rProcessing commits: 100% (2/2), done.\n",
+            stderr.getvalue(),
+        )
 
     def test_git_hot_path_uses_custom_format(self):
         args = parse_main_args(
@@ -391,6 +396,22 @@ class GitHotOutputTests(unittest.TestCase):
             self.TestProcessor(args).run()
         self.assertTrue(pager_out.closed)
         self.assertTrue(pager_proc.wait_called)
+
+    def test_git_hot_reports_git_log_errors_before_running_daglp(self):
+        args = parse_main_args(["-q", "HEAD"], prog="git-hot")
+        completed = subprocess.CompletedProcess(
+            ["git", "log"],
+            128,
+            stdout="",
+            stderr="fatal: not a git repository",
+        )
+        with patch("lifetime.get_paged_output", return_value=(io.StringIO(), None)), patch(
+            "subprocess.run", return_value=completed
+        ) as run_mock:
+            with self.assertRaises(ProcessingError) as raised:
+                list(Processor(args).stream_git_history())
+        self.assertEqual("fatal: not a git repository", str(raised.exception))
+        self.assertEqual(1, run_mock.call_count)
 
     def test_git_hot_reports_line_format_errors(self):
         stdout = io.StringIO()
