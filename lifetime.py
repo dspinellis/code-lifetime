@@ -854,7 +854,7 @@ class Processor:
             self.git_hot_completed_commits += 1
             percent = int((self.git_hot_completed_commits * 100) / self.git_hot_total_commits)
             print(
-                f"\r{percent:3d}% ({self.git_hot_completed_commits}/{self.git_hot_total_commits})",
+                f"\rProcessing commits: {percent:3d}% ({self.git_hot_completed_commits}/{self.git_hot_total_commits})",
                 end="",
                 file=sys.stderr,
                 flush=True,
@@ -862,6 +862,11 @@ class Processor:
             self.git_hot_progress_active = True
             return
         print(f"commit {self.hash} {self.timestamp}", file=sys.stderr)
+
+    def report_progress_done(self):
+        """Finish the progress reporting output."""
+        if self.git_hot_progress_active:
+            print(", done.", file=sys.stderr, flush=True)
 
     def run(self):
         try:
@@ -904,8 +909,7 @@ class Processor:
             self.reader.close()
             if self.growth_file is not None:
                 self.growth_file.close()
-            if self.git_hot_progress_active:
-                print(file=sys.stderr, flush=True)
+            self.report_progress_done()
             if self.pager_proc:
                 self.out.close()
                 self.pager_proc.wait()
