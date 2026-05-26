@@ -1,5 +1,5 @@
 /*
- * Copyright 1996-2021 Diomidis Spinellis
+ * Copyright 1996-2026 Diomidis Spinellis
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -146,6 +146,9 @@ main(int argc, char *argv[])
 			v->add_edge(get_vertex(parentName, ""));
 		}
 	}
+	
+	if (!end)
+		return 0;
 
 	// Calculate the maximum paths of all vertices
 	(void)maxLength(end);
