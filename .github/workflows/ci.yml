@@ -131,7 +131,7 @@ jobs:
           CIBW_ARCHS: ${{ matrix.cibw-archs }}
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.label }}
           path: wheelhouse/*.whl
