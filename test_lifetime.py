@@ -20,28 +20,28 @@ import os
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stderr
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
-from lifetime import ESCAPED_QUOTE
-from lifetime import Color
-from lifetime import hide_escaped_quotes
-from lifetime import line_details
-from lifetime import main
-from lifetime import max_value
-from lifetime import mean
-from lifetime import median
-from lifetime import min_value
-from lifetime import output_source_code
-from lifetime import parse_main_args
-from lifetime import ProcessingError
-from lifetime import Processor
-from lifetime import quartile_rank
-from lifetime import range_parse
-from lifetime import unescape
-from lifetime import unquote_unescape
-
+from lifetime import (
+    ESCAPED_QUOTE,
+    Color,
+    ProcessingError,
+    Processor,
+    hide_escaped_quotes,
+    line_details,
+    main,
+    max_value,
+    mean,
+    median,
+    min_value,
+    output_source_code,
+    parse_main_args,
+    quartile_rank,
+    range_parse,
+    unescape,
+    unquote_unescape,
+)
 
 TEST_DIFF_STREAM = """commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 86400
 

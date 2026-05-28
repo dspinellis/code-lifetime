@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/git-hot
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Lint
+        run: uv run --group dev ruff check .
+
+      - name: Run tests
+        run: uv run python -m unittest discover -s . -p 'test*.py'
+
+      - name: Build source distribution
+        run: uv build --sdist
+
+      - name: Install source checkout smoke test
+        run: |
+          uv venv .venv-smoke
+          uv pip install --python .venv-smoke/bin/python .
+          .venv-smoke/bin/git-hot --help
+          .venv-smoke/bin/daglp < /dev/null
+
+  wheels:
+    name: Wheel ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            os: ubuntu-latest
+            cibw-archs: x86_64
+            wheel-platform-tag: manylinux_2_28_x86_64
+          - label: linux-aarch64
+            os: ubuntu-latest
+            cibw-archs: aarch64
+            wheel-platform-tag: manylinux_2_28_aarch64
+          - label: windows-amd64
+            os: windows-latest
+            cibw-archs: AMD64
+            wheel-platform-tag: ""
+          - label: macos-x86_64
+            os: macos-13
+            cibw-archs: x86_64
+            wheel-platform-tag: ""
+          - label: macos-arm64
+            os: macos-14
+            cibw-archs: arm64
+            wheel-platform-tag: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up QEMU
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Build wheels
+        run: uv run --group dev cibuildwheel --output-dir wheelhouse
+        env:
+          CIBW_ARCHS: ${{ matrix.cibw-archs }}
+          GIT_HOT_WHEEL_PLATFORM_TAG: ${{ matrix.wheel-platform-tag }}
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.label }}
+          path: wheelhouse/*.whl
+
+  publish:
+    name: Publish distributions
+    needs: [test, wheels]
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build source distribution
+        run: uv build --sdist
+
+      - name: Validate publish artifacts
+        run: |
+          ls -l dist
+          if ls dist/*linux_*.whl 2>/dev/null; then
+            echo "Refusing to publish local Linux wheels. Use cibuildwheel manylinux wheels." >&2
+            exit 1
+          fi
+          ls dist/*manylinux_2_28*.whl
+          ls dist/*win_amd64.whl
+          ls dist/*macosx*x86_64.whl
+          ls dist/*macosx*arm64.whl
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

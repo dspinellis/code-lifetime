@@ -35,6 +35,125 @@ while project size and project age showed only a slight correlation.
 
 The following sections describe the tools included in this repository.
 
+## Installation as a package
+
+The project is distributed as a Python package named `git-hot`, with the import
+package named `git_hot`.
+Installing it provides the `git-hot` Git extension command and the
+platform-native Rust `daglp` executable.
+Git can invoke `git-hot` as `git hot` when the installation's script directory
+is on `PATH`.
+
+For an isolated command installation, use `uv tool`:
+
+```
+uv tool install git-hot
+```
+
+For installation in an active virtual environment:
+
+```
+uv pip install git-hot
+```
+
+The equivalent `pip` commands are:
+
+```
+python -m pip install git-hot
+python -m pip install --user git-hot
+```
+
+Use a virtual environment, `uv tool install`, `pipx`, or a user installation
+unless you deliberately manage packages in the system Python.  On systems
+following PEP 668, the system Python may reject global pip installs; prefer the
+operating system package manager or an isolated environment instead.
+
+## Installation from source
+
+Building or installing from source requires Python 3.10 or later and a Rust
+toolchain with `rustc`, because the package build compiles `daglp` from
+`src/git_hot/daglp.rs`.  The recommended project workflow uses
+[`uv`](https://docs.astral.sh/uv/), while the package remains standards-based
+and can still be installed by `pip`.
+
+For a project-local virtual environment:
+
+```
+uv venv
+uv pip install .
+```
+
+For development, use an editable install with the test and lint tools
+installed in the same environment:
+
+```
+uv sync --group dev
+uv pip install -e .
+uv run python -m unittest discover -s . -p 'test*.py'
+uv run ruff check .
+```
+
+For a user installation, which avoids writing into the system Python:
+
+```
+uv tool install .
+```
+
+`uv tool install` installs commands into uv's tool directory, typically
+`~/.local/bin` on Unix-like systems.  Ensure that directory is on `PATH`.
+For a classic pip user install, `python -m pip install --user .` also works.
+
+For a global installation from source, prefer a distribution package or an
+administrator-managed environment.  If a global pip installation is appropriate
+for the machine, run it explicitly through the intended interpreter:
+
+```
+python -m pip install .
+```
+
+## Distribution
+
+Build a source distribution locally with:
+
+```
+uv build --sdist
+```
+
+The generated artifact is written below `dist/`.
+Do not upload a locally built Linux wheel such as
+`git_hot-0.1-py3-none-linux_x86_64.whl` to PyPI; PyPI rejects the local
+`linux_x86_64` platform tag.  Release wheels are built separately through
+`cibuildwheel`, which produces PyPI-accepted platform wheels such as
+`manylinux`, Windows, and macOS wheels.
+
+Before publishing a release, run:
+
+```
+uv run --group dev ruff check .
+uv run python -m unittest discover -s . -p 'test*.py'
+uv build --sdist
+```
+
+To verify an installation from the source checkout in an isolated environment:
+
+```
+uv venv /tmp/git-hot-smoke
+uv pip install --python /tmp/git-hot-smoke/bin/python .
+/tmp/git-hot-smoke/bin/git-hot --help
+/tmp/git-hot-smoke/bin/daglp < /dev/null
+```
+
+The CI workflow builds and uploads separate wheels through `cibuildwheel` for
+Linux x86_64, Linux aarch64, Windows AMD64, macOS x86_64, and macOS arm64.
+Each wheel contains the single `daglp` executable compiled for that platform.
+Published GitHub releases also publish the source distribution and built wheels
+to PyPI using trusted publishing.
+
+The repository also contains research-oriented source tools, including
+`lifetime.py`, `difflog.sh`, `tokenize.pl`, and the original top-level
+`daglp.rs`.  These are kept in source form for reproducibility and further
+experimentation, but they are not installed by the `git-hot` package.
+
 ## lifetime
 The _lifetime_ tool parses the output of successive _git diff_ runs and,
 for every changed or deleted line, outputs a record containing the timestamps

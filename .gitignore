@@ -2,3 +2,8 @@ daglp
 daglp.exe
 __pycache__/
 *.pyc*
+build/
+dist/
+*.egg-info/
+.venv/
+.venv*/
