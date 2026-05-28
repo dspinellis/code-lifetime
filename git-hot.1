@@ -1,0 +1,333 @@
+.\" Copyright 1996-2026 Diomidis Spinellis
+.\"
+.\" Licensed under the Apache License, Version 2.0 (the "License");
+.\" you may not use this file except in compliance with the License.
+.\" You may obtain a copy of the License at
+.\"
+.\" http://www.apache.org/licenses/LICENSE-2.0
+.\"
+.\" Unless required by applicable law or agreed to in writing, software
+.\" distributed under the License is distributed on an "AS IS" BASIS,
+.\" WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+.\" See the License for the specific language governing permissions and
+.\" limitations under the License.
+.\"
+.TH GIT-HOT 1 "May 2026" "git-hot 0.1" "Git Manual"
+.SH NAME
+git-hot \- report Git file and line lifetime churn
+.SH SYNOPSIS
+.SY git
+.B hot
+.RB [ \-h ]
+.RB [ \-d
+.IR dir ]
+.RB [ \-q ]
+.RB [ \-D
+.IR opts ]
+.RB [ \-\-color
+.BR always | never ]
+.RB [ \-\-color-domain
+.BR churn | age | lifetime ]
+.RB [ \-\-format
+.IR format ]
+.RI [ ref ]
+.RI [[ \-\- ]
+.IR path ]
+.YS
+.SY git-hot
+.RB [ \-h ]
+.RB [ \-d
+.IR dir ]
+.RB [ \-q ]
+.RB [ \-D
+.IR opts ]
+.RB [ \-\-color
+.BR always | never ]
+.RB [ \-\-color-domain
+.BR churn | age | lifetime ]
+.RB [ \-\-format
+.IR format ]
+.RI [ ref ]
+.RI [[ \-\- ]
+.IR path ]
+.YS
+.SH DESCRIPTION
+.B git hot
+is a Git extension that reports how "hot" the current files or lines in a
+repository are, using line lifetime and churn information derived from Git
+history.
+It walks the repository's topologically ordered longest commit path, streams
+zero-context diffs through the code lifetime processor, and reports metrics
+for the files or lines that are alive at the selected revision.
+.PP
+When invoked without
+.IR path ,
+.B git hot
+prints one line per current source file, sorted by path.
+The default columns are the maximum line churn in the file, the median changed
+line lifetime in days, the median live line age in days, and the path.
+.PP
+When
+.I path
+is specified,
+.B git hot
+prints the reconstructed contents of that file, with each line preceded by its
+churn count by default.
+The path form follows Git's usual revision/path convention; use
+.B \-\-
+to disambiguate a path from a revision.
+.PP
+Unless quiet mode is selected,
+.B git hot
+reports progress on standard error.
+When standard output is a terminal, output is sent through the configured Git
+pager.
+.SH OPTIONS
+.TP
+.B \-h, \-\-help
+Show usage information and exit.
+.TP
+.BI "\-d " dir ", \-\-dir " dir
+Reconstruct source files below
+.I dir
+with each line preceded by its churn count.
+This option also leaves the normal selected output behavior in effect.
+.TP
+.BI "\-\-format " format
+Format file or line output using a restricted Python f-string expression.
+The available fields depend on whether
+.B git hot
+is producing file metrics or reconstructed line output; see
+.BR "FORMAT STRINGS" .
+.TP
+.B \-q, \-\-quiet
+Suppress progress output.
+.TP
+.BI "\-D " opts ", \-\-debug " opts
+Enable debugging output selected by letters in
+.IR opts .
+Useful flags include
+.B g
+to show Git invocations,
+.B H
+to show commit headers,
+.B D
+to show diff headers,
+.B E
+to show diff extended headers,
+.B L
+to show line-of-code processing,
+.B P
+to show change-set pushes,
+.B C
+to show commit-set changes,
+.B S
+to show splicing operations,
+.B R
+to reconstruct repository contents, and
+.B @
+to show range headers.
+.TP
+.BI "\-\-color " when
+Control ANSI color output.
+.I when
+must be
+.B always
+or
+.BR never .
+When this option is omitted, color is enabled only when standard output is a
+terminal.
+.TP
+.BI "\-\-color-domain " domain
+Choose the metric used for automatic color ranking.
+.I domain
+must be
+.BR churn ,
+.BR age ,
+or
+.BR lifetime .
+The default is
+.BR churn .
+.SH ARGUMENTS
+.TP
+.I ref
+Git revision or reference to analyze.
+If omitted,
+.B git hot
+uses the repository's default revision selection as provided by
+.BR "git log" .
+.TP
+.I path
+Limit analysis to one path and print reconstructed line details for that path.
+At most one path may be specified.
+Use
+.B \-\-
+before the path when the path could be parsed as a revision, or when no
+.I ref
+is supplied.
+.SH OUTPUT
+.SS File Metrics
+The default repository-wide output is equivalent to the format
+.PP
+.EX
+{max(churn):5d} {days(median(changed_lifetime)):5d} {days(median(line_age)):5d} {path}
+.EE
+.PP
+The columns are:
+.TP
+.B max churn
+The maximum number of changes recorded for any live line in the file.
+.TP
+.B median changed lifetime
+The median time, in rounded integer days, between changes of lines in the file.
+.TP
+.B median line age
+The median age, in rounded integer days, of the file's live lines at the
+analyzed revision.
+.TP
+.B path
+The repository path.
+.SS Path Output
+For a selected
+.IR path ,
+the default output is equivalent to:
+.PP
+.EX
+{churn:>{5}d}  {line}
+.EE
+.PP
+Each output line represents one live reconstructed line from the selected file.
+.SH FORMAT STRINGS
+.B git hot
+evaluates
+.B \-\-format
+as a Python f-string with a restricted set of names.
+The same option formats file-metric output when no path is selected, and line
+output when a path is selected.
+.PP
+Common helper names are:
+.BR days ,
+.BR max ,
+.BR min ,
+.BR median ,
+.BR mean ,
+.BR quartile_rank ,
+.BR color ,
+.BR color_reset ,
+.BR list ,
+and
+.BR map .
+.PP
+File-metric format strings may use:
+.BR path ,
+.BR churn ,
+.BR changed_lifetime ,
+.BR change_lifetime ,
+.BR line_age ,
+.BR line_churns ,
+.BR line_change_lifetimes ,
+.BR line_ages ,
+.BR file_line_churns ,
+.BR file_line_change_lifetimes ,
+.BR file_line_ages ,
+.BR repo_line_churns ,
+.BR repo_line_change_lifetimes ,
+and
+.BR repo_line_ages .
+.PP
+Line format strings may use:
+.BR churn ,
+.BR age ,
+.BR hash ,
+.BR change_lifetimes ,
+.BR lifetime_median ,
+.BR lifetime_mean ,
+.BR birthtime ,
+.BR line ,
+.BR file_line_churns ,
+.BR file_line_ages ,
+.BR file_line_change_lifetimes ,
+.BR repo_line_churns ,
+.BR repo_line_ages ,
+and
+.BR repo_line_change_lifetimes .
+.PP
+If the format string calls
+.BR color() ,
+.B git hot
+assumes color is handled explicitly and appends a reset sequence when color is
+enabled.
+Otherwise, enabled color is applied automatically using the selected
+.BR \-\-color-domain .
+.SH EXAMPLES
+.PP
+Show hot files in the current repository:
+.EX
+$ git hot
+.EE
+.PP
+Show hot files at
+.BR HEAD :
+.EX
+$ git hot HEAD
+.EE
+.PP
+Show line churn for one file:
+.EX
+$ git hot -- src/main.py
+.EE
+.PP
+Show line ages and birth commits for one file:
+.EX
+$ git hot -q --format '{days(age)} {hash[:7]} {line}' -- src/main.py
+.EE
+.PP
+Reconstruct all source files with churn prefixes below
+.BR hot-tree :
+.EX
+$ git hot --dir hot-tree HEAD
+.EE
+.SH FILES
+.TP
+.I git-hot
+The executable Git extension.
+When installed on
+.BR PATH ,
+Git can invoke it as
+.BR "git hot" .
+.TP
+.I daglp
+Helper program used to compute the longest path through the repository commit
+DAG.
+.SH NOTES
+.B git hot
+expects to run inside a Git repository and requires
+.B daglp
+to be available on
+.BR PATH .
+It uses Git commands including
+.BR "git log" ,
+.BR "git show" ,
+and
+.BR "git diff" ,
+with rename and copy detection enabled.
+.PP
+Only source-code files are reported in file-metric output.
+Binary files and deleted files are skipped.
+.SH EXIT STATUS
+.TP
+.B 0
+Successful completion.
+.TP
+.B 1
+A processing error occurred, such as an invalid output format or a failed
+helper command.
+.TP
+.B 2
+Command-line usage error reported by the argument parser.
+.SH SEE ALSO
+.BR git (1),
+.BR git-log (1),
+.BR git-diff (1),
+.BR git-show (1),
+.BR less (1)
