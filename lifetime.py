@@ -1318,7 +1318,10 @@ class Processor:
                 churn_count = prior_line.churn_count + 1
                 change_lifetimes = list(prior_line.change_lifetimes)
                 change_lifetimes.append(int(self.timestamp) - prior_line.birth_timestamp)
-                content_history = prior_line.content_history + [line[1:]]
+                if self.json_metrics_mode():
+                    content_history = prior_line.content_history + [line[1:]]
+                else:
+                    content_history = None
             else:
                 churn_count = 0
                 change_lifetimes = []
