@@ -58,7 +58,6 @@ class BdistWheel(bdist_wheel):
 
     def get_tag(self) -> tuple[str, str, str]:
         _python, _abi, platform = super().get_tag()
-        platform = os.environ.get("GIT_HOT_WHEEL_PLATFORM_TAG", platform)
         return "py3", "none", platform
 
 
