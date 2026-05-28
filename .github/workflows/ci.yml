@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -86,18 +89,21 @@ jobs:
             cibw-archs: arm64
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            .github
-            src
-            LICENSE
-            README.md
-            git-hot.1
-            pyproject.toml
-            setup.py
+      - name: Checkout packaging files
+        shell: bash
+        run: |
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git checkout FETCH_HEAD -- \
+            .github \
+            src \
+            LICENSE \
+            README.md \
+            git-hot.1 \
+            pyproject.toml \
+            setup.py \
             uv.lock
-          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
