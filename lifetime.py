@@ -23,6 +23,7 @@
 import argparse
 import builtins
 import datetime
+import json
 import os
 import re
 import shutil
@@ -111,6 +112,7 @@ class LineDetails:
         content="",
         birth_timestamp=None,
         birth_hash=None,
+        content_history=None,
         churn_count=0,
         change_lifetimes=None,
         delta=None,
@@ -129,6 +131,7 @@ class LineDetails:
         self.content = content
         self.birth_timestamp = birth_timestamp
         self.birth_hash = birth_hash
+        self.content_history = list(content_history) if content_history is not None else [content]
         self.churn_count = churn_count
         self.change_lifetimes = list(change_lifetimes) if change_lifetimes is not None else []
         self.delta = delta
@@ -156,6 +159,7 @@ class LineDetails:
             content=self.content,
             birth_timestamp=self.birth_timestamp,
             birth_hash=self.birth_hash,
+            content_history=self.content_history,
             churn_count=self.churn_count,
             change_lifetimes=self.change_lifetimes,
             delta=self.delta,
@@ -737,6 +741,7 @@ class Processor:
             self.args.line_details = False
             self.args.tokens = False
             self.args.delta = False
+            self.args.json_metrics = False
             self.args.end_hash = False
 
         self.color = Color(args)
@@ -911,7 +916,9 @@ class Processor:
                     self.bail_out(f"Invalid state {state}")
 
             self.process_last_commit()
-            if self.debug_reconstruction or self.args.churn_dir:
+            if self.json_metrics_mode():
+                self.dump_json_metrics()
+            elif self.debug_reconstruction or self.args.churn_dir:
                 self.reconstruct()
             elif self.dump_selected_file_details():
                 pass
@@ -1204,7 +1211,12 @@ class Processor:
                 self.op = "del"
                 self.cc.append({"op": "del", "path": self.old})
                 # Print death times of deleted file's lines
-                if not self.debug_reconstruction and not self.args.churn_dir and self.output_source_code(self.old):
+                if (
+                    not self.debug_reconstruction
+                    and not self.args.churn_dir
+                    and not self.json_metrics_mode()
+                    and self.output_source_code(self.old)
+                ):
                     for line_record in self.flt.get(self.old, FileDetails(self.old)).lines:
                         if self.args.compressed:
                             self.print_out(line_record.render_record(self.args))
@@ -1272,7 +1284,7 @@ class Processor:
                     # Verify that the -removed line matches the previous +recorded one.
                     if deleted_line.content != line[1:]:
                         self.bail_out(f"Expecting at({i} + {old_offset}) {deleted_line.content}")
-                elif output:
+                elif output and not self.json_metrics_mode():
                     if self.args.compressed:
                         self.print_out(deleted_line.render_record(self.args))
                     else:
@@ -1306,13 +1318,16 @@ class Processor:
                 churn_count = prior_line.churn_count + 1
                 change_lifetimes = list(prior_line.change_lifetimes)
                 change_lifetimes.append(int(self.timestamp) - prior_line.birth_timestamp)
+                content_history = prior_line.content_history + [line[1:]]
             else:
                 churn_count = 0
                 change_lifetimes = []
+                content_history = None
             new_line = LineDetails(
                 content=line[1:],
                 birth_timestamp=int(self.timestamp),
                 birth_hash=self.hash,
+                content_history=content_history,
                 churn_count=churn_count,
                 change_lifetimes=change_lifetimes,
             )
@@ -1371,7 +1386,7 @@ class Processor:
 
         # Print records of deleted lines
         eol = f" {delta}\n" if self.args.delta else "\n"
-        if not self.args.file_metrics and not self.selected_file_details_mode():
+        if not self.args.file_metrics and not self.selected_file_details_mode() and not self.json_metrics_mode():
             for record in self.delete_records:
                 print(record, end=eol, file=self.out)
         self.delete_records = []
@@ -1459,6 +1474,68 @@ class Processor:
                 file=self.out,
             )
 
+    def dump_json_metrics(self):
+        """Write all collected file and line metrics as JSON."""
+        current_timestamp = int(self.timestamp) if self.timestamp is not None else 0
+        files = []
+        for path in sorted(self.flt):
+            if path == "/dev/null":
+                continue
+            details = self.flt[path]
+            if details is None:
+                continue
+            if not self.output_source_code(path):
+                continue
+            files.append(self.json_file_metrics(path, details, current_timestamp))
+        json.dump(
+            {
+                "commit": self.hash,
+                "timestamp": current_timestamp,
+                "files": files,
+            },
+            self.out,
+            ensure_ascii=False,
+            indent=2,
+        )
+        print(file=self.out)
+
+    def json_file_metrics(self, path, details, current_timestamp):
+        """Return JSON-serializable metrics for a single tracked file."""
+        return {
+            "path": path,
+            "binary": details.binary,
+            "change_lifetimes": list(details.change_lifetimes),
+            "lines": [
+                self.json_line_metrics(index, line, current_timestamp)
+                for index, line in enumerate(details.lines, start=1)
+            ],
+        }
+
+    def json_line_metrics(self, line_number, line, current_timestamp):
+        """Return JSON-serializable metrics for a single tracked line."""
+        return {
+            "line_number": line_number,
+            "content": line.content,
+            "contents": list(line.content_history),
+            "birth_timestamp": line.birth_timestamp,
+            "birth_hash": line.birth_hash,
+            "age": current_timestamp - line.birth_timestamp,
+            "churn": line.churn_count,
+            "change_lifetimes": list(line.change_lifetimes),
+            "delta": line.delta,
+            "length": line.length,
+            "startspace": line.startspace,
+            "string": line.string,
+            "comment": line.comment,
+            "comma": line.comma,
+            "bracket": line.bracket,
+            "access": line.access,
+            "assignment": line.assignment,
+            "scope": line.scope,
+            "array": line.array,
+            "logical": line.logical,
+        }
+
     def repo_line_populations(self, current_timestamp):
         repo_line_churns = []
         repo_line_ages = []
@@ -1541,6 +1618,9 @@ class Processor:
     def selected_file_details_mode(self):
         return getattr(self.args, "path", None) is not None and not self.args.churn_dir
 
+    def json_metrics_mode(self):
+        return getattr(self.args, "json_metrics", False)
+
 def lifetime_argument_parser():
     """Return a CLI parser for the original script used for research"""
     parser = argparse.ArgumentParser(
@@ -1554,6 +1634,7 @@ def lifetime_argument_parser():
     parser.add_argument("-E", dest="redirect_output", action="store_true", help="Redirect output to stderr")
     parser.add_argument("-f", dest="file_metrics", action="store_true", help="List current files with churn and age metrics")
     parser.add_argument("-g", dest="growth_file", metavar="file", help="Create a file with total LoC for each commit")
+    parser.add_argument("-j", dest="json_metrics", action="store_true", help="Output collected file and line metrics as JSON")
     parser.add_argument("-l", dest="line_details", action="store_true", help="Output number of token types contained in each line")
     parser.add_argument("-s", dest="source_only", action="store_true", help="Report only source code files")
     parser.add_argument("-t", dest="tokens", action="store_true", help="Show tokens with lifetime")

@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -178,6 +179,61 @@ class ConvertedFunctionTests(unittest.TestCase):
             os.unlink(path)
         self.assertEqual(0, exit_code)
         self.assertEqual("f 1 1\n", stdout.getvalue())
+
+    def test_json_metrics_output(self):
+        fd, path = tempfile.mkstemp(
+            prefix="test-json-metrics-",
+            suffix=".log",
+            dir=os.getcwd(),
+        )
+        os.close(fd)
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(TEST_DIFF_STREAM)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = main(["-q", "-j", path])
+        finally:
+            os.unlink(path)
+        self.assertEqual(0, exit_code)
+        data = json.loads(stdout.getvalue())
+        self.assertEqual("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", data["commit"])
+        self.assertEqual(172800, data["timestamp"])
+        self.assertEqual(1, len(data["files"]))
+        file_metrics = data["files"][0]
+        self.assertEqual("f", file_metrics["path"])
+        self.assertEqual([86400], file_metrics["change_lifetimes"])
+        self.assertEqual(2, len(file_metrics["lines"]))
+        self.assertEqual(
+            {
+                "line_number": 1,
+                "content": "one\n",
+                "contents": ["one\n"],
+                "birth_timestamp": 86400,
+                "birth_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "age": 86400,
+                "churn": 0,
+                "change_lifetimes": [],
+                "delta": None,
+                "length": 0,
+                "startspace": 0,
+                "string": 0,
+                "comment": 0,
+                "comma": 0,
+                "bracket": 0,
+                "access": 0,
+                "assignment": 0,
+                "scope": 0,
+                "array": 0,
+                "logical": 0,
+            },
+            file_metrics["lines"][0],
+        )
+        self.assertEqual("two changed\n", file_metrics["lines"][1]["content"])
+        self.assertEqual(["two\n", "two changed\n"], file_metrics["lines"][1]["contents"])
+        self.assertEqual(1, file_metrics["lines"][1]["churn"])
+        self.assertEqual([86400], file_metrics["lines"][1]["change_lifetimes"])
 
 
 class FormatterHelperTests(unittest.TestCase):
