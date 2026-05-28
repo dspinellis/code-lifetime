@@ -160,13 +160,13 @@ jobs:
       - name: Validate publish artifacts
         run: |
           ls -l dist
-          if ls dist/*linux_*.whl 2>/dev/null; then
+          if compgen -G "dist/*-linux_*.whl" > /dev/null; then
+            ls dist/*-linux_*.whl
             echo "Refusing to publish local Linux wheels. Use cibuildwheel manylinux wheels." >&2
             exit 1
           fi
           ls dist/*manylinux_2_28*.whl
           ls dist/*win_amd64.whl
-          ls dist/*macosx*x86_64.whl
           ls dist/*macosx*arm64.whl
 
       - name: Publish to PyPI

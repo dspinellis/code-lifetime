@@ -144,10 +144,10 @@ uv pip install --python /tmp/git-hot-smoke/bin/python .
 ```
 
 The CI workflow builds and uploads separate wheels through `cibuildwheel` for
-Linux x86_64, Linux aarch64, Windows AMD64, macOS x86_64, and macOS arm64.
-Each wheel contains the single `daglp` executable compiled for that platform.
-Published GitHub releases also publish the source distribution and built wheels
-to PyPI using trusted publishing.
+Linux x86_64, Linux aarch64, Windows AMD64, and macOS arm64.  Each wheel
+contains the single `daglp` executable compiled for that platform.  Published
+GitHub releases also publish the source distribution and built wheels to PyPI
+using trusted publishing.
 
 The repository also contains research-oriented source tools, including
 `lifetime.py`, `difflog.sh`, `tokenize.pl`, and the original top-level
