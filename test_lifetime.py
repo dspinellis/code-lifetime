@@ -127,12 +127,16 @@ class ConvertedFunctionTests(unittest.TestCase):
         self.assertEqual("a b", unescape(r"a\040b"))
         self.assertEqual(
             "\u03b5\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac",
-            unescape(r"\316\265\316\273\316\273\316\267\316\275\316\271\316\272\316\254"),
+            unescape(
+                r"\316\265\316\273\316\273\316\267\316\275\316\271"
+                r"\316\272\316\254"
+            ),
         )
         self.assertEqual('a"b', unescape("a" + ESCAPED_QUOTE + "b"))
         self.assertEqual('a"b', unquote_unescape('"a\\"b"'))
         self.assertEqual(
-            'another file name with "quotes", spaces \u03b5\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac',
+            'another file name with "quotes", spaces '
+            "\u03b5\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac",
             unquote_unescape(
                 r'"another file name with \"quotes\", spaces '
                 r'\316\265\316\273\316\273\316\267\316\275\316\271\316\272\316\254"'
@@ -174,7 +178,15 @@ class ConvertedFunctionTests(unittest.TestCase):
             stdout = io.StringIO()
             stderr = io.StringIO()
             with redirect_stdout(stdout), redirect_stderr(stderr):
-                exit_code = main(["-q", "-f", "--format", "{path} {max(line_churns)} {days(mean(line_ages))}", path])
+                exit_code = main(
+                    [
+                        "-q",
+                        "-f",
+                        "--format",
+                        "{path} {max(line_churns)} {days(mean(line_ages))}",
+                        path,
+                    ]
+                )
         finally:
             os.unlink(path)
         self.assertEqual(0, exit_code)
@@ -297,7 +309,22 @@ class GitHotArgumentParsingTests(unittest.TestCase):
 
     def test_git_hot_indicative_arguments(self):
         args = self.parse_git_hot(
-            ["-q", "--debug", "g", "--dir", "out", "--format", "{line}", "--color", "always", "--color-domain", "age", "HEAD", "--", "src/main.py"]
+            [
+                "-q",
+                "--debug",
+                "g",
+                "--dir",
+                "out",
+                "--format",
+                "{line}",
+                "--color",
+                "always",
+                "--color-domain",
+                "age",
+                "HEAD",
+                "--",
+                "src/main.py",
+            ]
         )
         self.assertTrue(args.quiet)
         self.assertEqual("g", args.debug_options)
@@ -387,7 +414,15 @@ class GitHotOutputTests(unittest.TestCase):
 
     def test_git_hot_path_explicit_color_disables_default_coloring(self):
         args = parse_main_args(
-            ["-q", "--color", "always", "--format", "{color(quartile_rank(churn, file_line_churns))}{line}", "--", "f"],
+            [
+                "-q",
+                "--color",
+                "always",
+                "--format",
+                "{color(quartile_rank(churn, file_line_churns))}{line}",
+                "--",
+                "f",
+            ],
             prog="git-hot",
         )
         stdout = io.StringIO()
@@ -495,7 +530,8 @@ class GitHotOutputTests(unittest.TestCase):
         self.assertEqual(1, exit_code)
         self.assertEqual("", stdout.getvalue())
         self.assertEqual(
-            "Error: Invalid file output format string '{missing_name}': name 'missing_name' is not defined\n",
+            "Error: Invalid file output format string '{missing_name}': "
+            "name 'missing_name' is not defined\n",
             stderr.getvalue(),
         )
 

@@ -54,5 +54,8 @@ test-python: daglp
 test-python-unit:
 	python3 -m unittest discover -s . -p 'test*.py'
 
+lint:
+	python3 -m pylint lifetime.py test_lifetime.py
+
 clean:
 	rm -f daglp

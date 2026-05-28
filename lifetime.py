@@ -197,6 +197,8 @@ class LineDetails:
 class InputReader:
     def __init__(self):
         self.line_number = 0
+        self.paths = None
+        self.line_iterator = None
         self._index = 0
         self._current = None
         self._close_current = False
@@ -320,10 +322,12 @@ def range_parse(diff_range):
 def output_source_code(name, source_only=False):
     if not source_only:
         return True
-    # Keep tokenize.pl:tokenize, lifetime.pl:output_source_code, repo-metrics-report.sh, analyze-moves.sh in sync
+    # Keep tokenize.pl:tokenize, lifetime.pl:output_source_code,
+    # repo-metrics-report.sh, analyze-moves.sh in sync.
     return (
         re.search(
-            r"\.(C|c|cc|cpp|cs|cxx|go|hh|hpp|h\+\+|c\+\+|h|H|hxx|java|((php[3457s]?)|pht|php-s)|py|rs)$",
+            r"\.(C|c|cc|cpp|cs|cxx|go|hh|hpp|h\+\+|c\+\+|h|H|hxx|"
+            r"java|((php[3457s]?)|pht|php-s)|py|rs)$",
             name,
         )
         is not None
@@ -469,7 +473,7 @@ def require_flat_values(values):
         raise TypeError("aggregate functions require a flat sequence")
     # Values are assumed to be homogeneous, so sampling the first is enough.
     if values and isinstance(values[0], (list, tuple)):
-            raise TypeError("nested sequences require explicit aggregation")
+        raise TypeError("nested sequences require explicit aggregation")
     return values
 
 
@@ -552,7 +556,14 @@ class LineFormatter:
         self.repo_line_ages = repo_line_ages
         self.repo_line_change_lifetimes = repo_line_change_lifetimes
 
-    def bind_file(self, details, current_timestamp, repo_line_churns, repo_line_ages, repo_line_change_lifetimes):
+    def bind_file(
+        self,
+        details,
+        current_timestamp,
+        repo_line_churns,
+        repo_line_ages,
+        repo_line_change_lifetimes,
+    ):
         """Bind the current file and repo populations for line formatting."""
         self.current_timestamp = current_timestamp
         self.file_change_lifetimes = details.change_lifetimes
@@ -573,7 +584,11 @@ class LineFormatter:
         return quartile_rank(line.churn_count, self.file_line_churns)
 
     def format(self, line):
-        age = 0 if line.birth_timestamp is None else int(self.current_timestamp - line.birth_timestamp)
+        age = (
+            0
+            if line.birth_timestamp is None
+            else int(self.current_timestamp - line.birth_timestamp)
+        )
         context = {
             "churn": line.churn_count,
             "age": age,
@@ -677,7 +692,10 @@ class FileFormatter:
             if self.color.use_color:
                 rendered += self.color.reset()
         elif self.color.use_color:
-            rendered = self.color.wrap(rendered, self.default_quartile(churns, change_lifetimes, ages))
+            rendered = self.color.wrap(
+                rendered,
+                self.default_quartile(churns, change_lifetimes, ages),
+            )
         return rendered
 
 def get_paged_output(use_color=False):
@@ -734,7 +752,7 @@ class Processor:
             # report in the specified directory churn for all files.
             self.reader = InputReader.from_iterator(
                 self.stream_git_history(args.path))
-            self.args.file_metrics = (args.path is None)
+            self.args.file_metrics = args.path is None
             self.args.growth_file = None
             self.args.compressed = False
             self.args.source_only = False
@@ -858,12 +876,11 @@ class Processor:
         if self.git_hot_cli and self.git_hot_total_commits:
             self.git_hot_completed_commits += 1
             percent = int((self.git_hot_completed_commits * 100) / self.git_hot_total_commits)
-            print(
-                f"\rProcessing commits: {percent:3d}% ({self.git_hot_completed_commits}/{self.git_hot_total_commits})",
-                end="",
-                file=sys.stderr,
-                flush=True,
+            message = (
+                f"\rProcessing commits: {percent:3d}% "
+                f"({self.git_hot_completed_commits}/{self.git_hot_total_commits})"
             )
+            print(message, end="", file=sys.stderr, flush=True)
             self.git_hot_progress_active = True
             return
         print(f"commit {self.hash} {self.timestamp}", file=sys.stderr)
@@ -881,6 +898,7 @@ class Processor:
             args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            check=False,
             **utf8_surrogateescape_text(),
         )
         if completed.returncode != 0:
@@ -948,7 +966,7 @@ class Processor:
             "--",
             file,
         ]
-        sha_to_file: Dict[str, str] = dict()
+        sha_to_file: Dict[str, str] = {}
         line_number = 0
         for line in self.checked_command_output(args).splitlines():
             line = line.strip()
@@ -983,6 +1001,7 @@ class Processor:
             input=log_output,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            check=False,
             **utf8_surrogateescape_text(),
         )
         if daglp.returncode != 0:
@@ -1168,9 +1187,10 @@ class Processor:
                         "change_lifetimes": list(source.change_lifetimes),
                     }
                 )
-                self.oref = [line.copy() for line in self.flt.get(self.old, FileDetails(self.old)).lines]
+                old_details = self.flt.get(self.old, FileDetails(self.old))
+                self.oref = [line.copy() for line in old_details.lines]
                 self.oref_change_lifetimes = list(
-                    self.flt.get(self.old, FileDetails(self.old)).change_lifetimes
+                    old_details.change_lifetimes
                 )
                 self.nref = self.oref
                 self.nref_change_lifetimes = self.oref_change_lifetimes
@@ -1193,7 +1213,8 @@ class Processor:
                 )
                 if self.args.growth_file and self.output_source_code(to_path):
                     self.loc += len(source.lines)
-                self.nref = [line.copy() for line in self.flt.get(self.old, FileDetails(self.old)).lines]
+                old_details = self.flt.get(self.old, FileDetails(self.old))
+                self.nref = [line.copy() for line in old_details.lines]
                 self.nref_change_lifetimes = []
                 continue
             if line.startswith("commit "):
@@ -1204,7 +1225,13 @@ class Processor:
                 return "diff"
             if line.startswith("new file mode "):
                 self.cc.append(
-                    {"op": "set", "path": self.old, "lines": [], "binary": False, "change_lifetimes": []}
+                    {
+                        "op": "set",
+                        "path": self.old,
+                        "lines": [],
+                        "binary": False,
+                        "change_lifetimes": [],
+                    }
                 )
                 continue
             if line.startswith("deleted file mode "):
@@ -1221,7 +1248,9 @@ class Processor:
                         if self.args.compressed:
                             self.print_out(line_record.render_record(self.args))
                         else:
-                            self.delete_records.append(line_record.render_deleted(self.args, self.timestamp))
+                            self.delete_records.append(
+                                line_record.render_deleted(self.args, self.timestamp)
+                            )
                 continue
             if re.match(r"^Binary files ([^ ]*) and ([^ ]*) differ", line):
                 current = self.flt.get(self.old)
@@ -1288,12 +1317,20 @@ class Processor:
                     if self.args.compressed:
                         self.print_out(deleted_line.render_record(self.args))
                     else:
-                        self.delete_records.append(deleted_line.render_deleted(self.args, self.timestamp))
+                        self.delete_records.append(
+                            deleted_line.render_deleted(self.args, self.timestamp)
+                        )
                 deleted_lines.append(deleted_line.copy())
-                self.oref_change_lifetimes.append(int(self.timestamp) - deleted_line.birth_timestamp)
+                self.oref_change_lifetimes.append(
+                    int(self.timestamp) - deleted_line.birth_timestamp
+                )
             else:
+                warning = (
+                    f"Warning: {self.hash} line {self.reader.line_number} "
+                    f"unencountered line {self.old}:{i + 1}"
+                )
                 print(
-                    f"Warning: {self.hash} line {self.reader.line_number} unencountered line {self.old}:{i + 1}",
+                    warning,
                     file=sys.stderr,
                 )
             line = self.reader.read_raw()
@@ -1389,7 +1426,11 @@ class Processor:
 
         # Print records of deleted lines
         eol = f" {delta}\n" if self.args.delta else "\n"
-        if not self.args.file_metrics and not self.selected_file_details_mode() and not self.json_metrics_mode():
+        if (
+            not self.args.file_metrics
+            and not self.selected_file_details_mode()
+            and not self.json_metrics_mode()
+        ):
             for record in self.delete_records:
                 print(record, end=eol, file=self.out)
         self.delete_records = []
@@ -1412,12 +1453,22 @@ class Processor:
             directory = os.path.dirname(full_path)
             if directory:
                 os.makedirs(directory, exist_ok=True)
-            with open(full_path, "w", encoding="utf-8", errors="surrogateescape", newline="") as out:
+            with open(
+                full_path,
+                "w",
+                encoding="utf-8",
+                errors="surrogateescape",
+                newline="",
+            ) as out:
                 self.write_reconstructed_lines(out, details)
 
     def write_reconstructed_lines(self, out, details):
         current_timestamp = int(self.timestamp) if self.timestamp is not None else 0
-        repo_line_churns, repo_line_ages, repo_line_change_lifetimes = self.repo_line_populations(current_timestamp)
+        (
+            repo_line_churns,
+            repo_line_ages,
+            repo_line_change_lifetimes,
+        ) = self.repo_line_populations(current_timestamp)
         self.line_formatter.bind_file(
             details,
             current_timestamp,
@@ -1459,7 +1510,11 @@ class Processor:
 
     def dump_file_metrics(self):
         current_timestamp = int(self.timestamp)
-        repo_line_churns, repo_line_ages, repo_line_change_lifetimes = self.repo_line_populations(current_timestamp)
+        (
+            repo_line_churns,
+            repo_line_ages,
+            repo_line_change_lifetimes,
+        ) = self.repo_line_populations(current_timestamp)
         self.file_formatter.bind_repo(repo_line_churns, repo_line_ages, repo_line_change_lifetimes)
         for path in sorted(self.flt):
             if path == "/dev/null":
@@ -1547,8 +1602,12 @@ class Processor:
             if path == "/dev/null" or details is None:
                 continue
             repo_line_churns.append([line.churn_count for line in details.lines])
-            repo_line_ages.append([current_timestamp - line.birth_timestamp for line in details.lines])
-            repo_line_change_lifetimes.append([list(line.change_lifetimes) for line in details.lines])
+            repo_line_ages.append(
+                [current_timestamp - line.birth_timestamp for line in details.lines]
+            )
+            repo_line_change_lifetimes.append(
+                [list(line.change_lifetimes) for line in details.lines]
+            )
         return repo_line_churns, repo_line_ages, repo_line_change_lifetimes
 
     def bail_out(self, expect):
@@ -1571,11 +1630,15 @@ class Processor:
                     delta = self.loc - self.prev_loc
                     for line in lines:
                         line.delta = delta
+                existing_lifetimes = self.flt.get(
+                    rec["path"],
+                    FileDetails(rec["path"]),
+                ).change_lifetimes
                 self.flt[rec["path"]] = FileDetails(
                     rec["path"],
                     lines,
                     rec.get("binary", False),
-                    rec.get("change_lifetimes", self.flt.get(rec["path"], FileDetails(rec["path"])).change_lifetimes),
+                    rec.get("change_lifetimes", existing_lifetimes),
                 )
             elif rec["op"] == "del":
                 self.flt.pop(rec["path"], None)
@@ -1630,21 +1693,71 @@ def lifetime_argument_parser():
         prog="lifetime",
         description="Explore line lifetime and churn"
     )
-    parser.add_argument("-c", dest="compressed", action="store_true", help='Output in a compressed format: line death times can be obtained from commit markers and alive lines appear after a line marked END.')
-    parser.add_argument("-C", dest="churn_dir", metavar="dir", help="Reconstruct source files with lines preceded by churn count")
+    parser.add_argument(
+        "-c",
+        dest="compressed",
+        action="store_true",
+        help=(
+            "Output in a compressed format: line death times can be obtained "
+            "from commit markers and alive lines appear after a line marked END."
+        ),
+    )
+    parser.add_argument(
+        "-C",
+        dest="churn_dir",
+        metavar="dir",
+        help="Reconstruct source files with lines preceded by churn count",
+    )
     parser.add_argument("-d", dest="delta", action="store_true", help="Report the LoC delta")
-    parser.add_argument("-e", dest="end_hash", metavar="SHA", help="End processing after the specified commit hash")
-    parser.add_argument("-E", dest="redirect_output", action="store_true", help="Redirect output to stderr")
-    parser.add_argument("-f", dest="file_metrics", action="store_true", help="List current files with churn and age metrics")
-    parser.add_argument("-g", dest="growth_file", metavar="file", help="Create a file with total LoC for each commit")
-    parser.add_argument("-j", dest="json_metrics", action="store_true", help="Output collected file and line metrics as JSON")
-    parser.add_argument("-l", dest="line_details", action="store_true", help="Output number of token types contained in each line")
-    parser.add_argument("-s", dest="source_only", action="store_true", help="Report only source code files")
+    parser.add_argument(
+        "-e",
+        dest="end_hash",
+        metavar="SHA",
+        help="End processing after the specified commit hash",
+    )
+    parser.add_argument(
+        "-E",
+        dest="redirect_output",
+        action="store_true",
+        help="Redirect output to stderr",
+    )
+    parser.add_argument(
+        "-f",
+        dest="file_metrics",
+        action="store_true",
+        help="List current files with churn and age metrics",
+    )
+    parser.add_argument(
+        "-g",
+        dest="growth_file",
+        metavar="file",
+        help="Create a file with total LoC for each commit",
+    )
+    parser.add_argument(
+        "-j",
+        dest="json_metrics",
+        action="store_true",
+        help="Output collected file and line metrics as JSON",
+    )
+    parser.add_argument(
+        "-l",
+        dest="line_details",
+        action="store_true",
+        help="Output number of token types contained in each line",
+    )
+    parser.add_argument(
+        "-s",
+        dest="source_only",
+        action="store_true",
+        help="Report only source code files",
+    )
     parser.add_argument("-t", dest="tokens", action="store_true", help="Show tokens with lifetime")
-    parser.add_argument("--format", dest="output_format",
-                        default=None,
-                        help="Format output using a Python f-string",
-                        )
+    parser.add_argument(
+        "--format",
+        dest="output_format",
+        default=None,
+        help="Format output using a Python f-string",
+    )
     parser.add_argument("input_files", nargs="*")
     return parser
 
