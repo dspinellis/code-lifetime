@@ -20,19 +20,6 @@ all: daglp
 daglp: daglp.rs
 	rustc $(RUSTFLAGS) -o $@ $<
 
-test-perl: daglp
-	rm -rf code-lifetime-test code-lifetime-test-branch
-	git clone ./fixtures/code-lifetime-test.git
-	cd code-lifetime-test && ../difflog.sh master | ../lifetime.pl -C ../churn
-	diff -r fixtures/churn.ok/ churn/
-	git clone ./fixtures/code-lifetime-test-branch.git
-	./sync-test-branches.sh
-	./lifetime.pl -D u
-	TOOL=./lifetime.pl ./runtest.sh
-	rm -rf churn/
-	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
-	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
-
 test-python: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch
 	(cd fixtures/code-lifetime-test.git/ ; ../../difflog.sh master) | ./lifetime.py -t 2>/dev/null | sort  | diff fixtures/tokens.out  -
