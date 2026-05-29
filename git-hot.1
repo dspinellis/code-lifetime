@@ -83,26 +83,26 @@ reports progress on standard error.
 When standard output is a terminal, output is sent through the configured Git
 pager.
 .SH OPTIONS
-.TP
+.TP 25
 .B \-h, \-\-help
 Show usage information and exit.
-.TP
+.TP 25
 .BI "\-d " dir ", \-\-dir " dir
 Reconstruct source files below
 .I dir
 with each line preceded by its churn count.
 This option also leaves the normal selected output behavior in effect.
-.TP
+.TP 25
 .BI "\-\-format " format
 Format file or line output using a restricted Python f-string expression.
 The available fields depend on whether
 .B git hot
 is producing file metrics or reconstructed line output; see
 .BR "FORMAT STRINGS" .
-.TP
+.TP 25
 .B \-q, \-\-quiet
 Suppress progress output.
-.TP
+.TP 25
 .BI "\-D " opts ", \-\-debug " opts
 Enable debugging output selected by letters in
 .IR opts .
@@ -127,7 +127,7 @@ to show splicing operations,
 to reconstruct repository contents, and
 .B @
 to show range headers.
-.TP
+.TP 25
 .BI "\-\-color " when
 Control ANSI color output.
 .I when
@@ -137,7 +137,7 @@ or
 .BR never .
 When this option is omitted, color is enabled only when standard output is a
 terminal.
-.TP
+.TP 25
 .BI "\-\-color-domain " domain
 Choose the metric used for automatic color ranking.
 .I domain
@@ -174,20 +174,19 @@ The default repository-wide output is equivalent to the format
 .EE
 .PP
 The columns are:
-.TP
+.TP 30
 .B max churn
 The maximum number of changes recorded for any live line in the file.
-.TP
+.TP 30
 .B median changed lifetime
 The median time, in rounded integer days, between changes of lines in the file.
-.TP
+.TP 30
 .B median line age
 The median age, in rounded integer days, of the file's live lines at the
 analyzed revision.
-.TP
+.TP 30
 .B path
 The repository path.
-.SS Path Output
 For a selected
 .IR path ,
 the default output is equivalent to:
