@@ -156,7 +156,7 @@ fine-grained code lifetime analysis, including `lifetime.py`, `difflog.sh`,
 reproducibility and experimentation, but the installable package exposes only
 `git-hot` and `daglp`.
 
-For historical and research context, see `lifetime-tools.md`.
+For historical and research context, see [lifetime-tools.md](https://github.com/dspinellis/git-hot/blob/master/lifetime-tools.md).
 
 ## License
 
