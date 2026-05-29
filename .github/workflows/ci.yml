@@ -91,6 +91,7 @@ jobs:
             LICENSE \
             README.md \
             git-hot.1 \
+            daglp.1 \
             pyproject.toml \
             setup.py \
             uv.lock
