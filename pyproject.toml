@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "git-hot"
-version = "0.6"
+version = "0.8"
 description = "Git extension for reporting source code line lifetime and churn"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,7 +12,7 @@ license = "Apache-2.0"
 authors = [{ name = "Diomidis Spinellis" }]
 keywords = ["git", "churn", "software-evolution", "repository-mining"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
@@ -48,7 +48,7 @@ where = ["src"]
 git_hot = ["daglp.rs"]
 
 [tool.setuptools.data-files]
-"share/man/man1" = ["git-hot.1"]
+"share/man/man1" = ["git-hot.1", "daglp.1"]
 
 [tool.ruff]
 line-length = 100
