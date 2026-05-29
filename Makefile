@@ -13,16 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-CXXFLAGS=-O3
-
-# Prevent stack overflow under Cygwin
-ifeq ($(OS),Windows_NT)
-  CXXFLAGS += -Wl,--stack,16777216
-endif
+RUSTFLAGS=-O
 
 all: daglp
 
-daglp: daglp.cpp
+daglp: daglp.rs
+	rustc $(RUSTFLAGS) -o $@ $<
 
 test-perl: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch
@@ -58,4 +54,4 @@ lint:
 	python3 -m pylint lifetime.py test_lifetime.py
 
 clean:
-	rm -f daglp
+	rm -f daglp daglp.exe daglp.pdb
