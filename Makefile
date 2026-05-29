@@ -17,7 +17,7 @@ RUSTFLAGS=-O
 
 all: daglp
 
-daglp: daglp.rs
+daglp: ./src/git_hot/daglp.rs
 	rustc $(RUSTFLAGS) -o $@ $<
 
 test-python: daglp
