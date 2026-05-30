@@ -934,6 +934,7 @@ class Processor:
                     self.bail_out(f"Invalid state {state}")
 
             self.process_last_commit()
+            self.report_progress_done()
             if self.json_metrics_mode():
                 self.dump_json_metrics()
             elif self.debug_reconstruction or self.args.churn_dir:
@@ -948,7 +949,6 @@ class Processor:
             self.reader.close()
             if self.growth_file is not None:
                 self.growth_file.close()
-            self.report_progress_done()
             if self.pager_proc:
                 self.out.close()
                 self.pager_proc.wait()
