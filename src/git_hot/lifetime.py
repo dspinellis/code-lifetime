@@ -870,9 +870,15 @@ class Processor:
     def noop_print_out(self, text, end="\n"):
         pass
 
-    def report_progress(self):
+    def report_progress(self, message=None):
         if self.args.quiet or self.debug_reconstruction:
             return
+
+        if message:
+            print(message, end="" if self.git_hot_cli else "\n", file=sys.stderr,
+                  flush=True)
+            return
+
         if self.git_hot_cli and self.git_hot_total_commits:
             self.git_hot_completed_commits += 1
             percent = int((self.git_hot_completed_commits * 100) / self.git_hot_total_commits)
@@ -992,10 +998,13 @@ class Processor:
         # Create the longest path through all the repo's commits.
         # git-log | daglp
 
+        self.report_progress("Obtaining commit graph")
         log_output = self.checked_command_output(
             ["git", "log", "--topo-order", "--pretty=format:%H %at %P"]
         )
         self.debug_print_git("Run: daglp")
+
+        self.report_progress("Calculating longest path")
         daglp = subprocess.run(
             ["daglp"],
             input=log_output,
