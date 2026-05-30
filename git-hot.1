@@ -71,8 +71,14 @@ When
 .I path
 is specified,
 .B git hot
-prints the reconstructed contents of that file, with each line preceded by its
-churn count by default.
+prints the reconstructed contents of the specified file,
+with each line preceded by its churn count by default.
+Note that when a path is given,
+.B git hot
+follows the specified file only in the form given on the command line.
+Otherwise,
+.B git hot
+follows accurately each file's renamings and moves.
 The path form follows Git's usual revision/path convention; use
 .B \-\-
 to disambiguate a path from a revision.

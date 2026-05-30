@@ -31,7 +31,7 @@ import shutil
 import statistics
 import subprocess
 import sys
-from typing import Dict, Iterator
+from typing import Iterator, Set
 
 VERSION = "0.1"
 ESCAPED_QUOTE = "\001"
@@ -875,8 +875,8 @@ class Processor:
             return
 
         if message:
-            print(message, end="" if self.git_hot_cli else "\n", file=sys.stderr,
-                  flush=True)
+            print(f"\r{message}", end="" if self.git_hot_cli else "\n",
+                  file=sys.stderr, flush=True)
             return
 
         if self.git_hot_cli and self.git_hot_total_commits:
@@ -959,29 +959,22 @@ class Processor:
                 self.out.close()
                 self.pager_proc.wait()
 
-    def file_commits(self, file: str) -> Dict[str, str]:
-        """Return a dictionary from commit SHAs to the corresponding file name."""
+    def file_commits(self, file: str) -> Set[str]:
+        """Return a set of commit SHAs touching the specified file name."""
 
         args = [
             "git",
             "log",
-            "-C", "-C", "-M", "-M",
-            "--name-only",
+            "--all",
+            "--full-history",
             "--pretty=format:%H",
-            "--follow",
             "--",
             file,
         ]
-        sha_to_file: Dict[str, str] = {}
-        line_number = 0
+        sha_to_file: Set[str] = set()
+        self.report_progress("Obtaining file commits")
         for line in self.checked_command_output(args).splitlines():
-            line = line.strip()
-            if line_number % 3 == 0:  # SHA record
-                sha = line
-            elif line_number % 3 == 1:  # file name
-                sha_to_file[sha] = line
-            line_number += 1
-
+            sha_to_file.add(line)
         return sha_to_file
 
     def stream_git_history(self, file: str=None) -> Iterator[str]:
@@ -993,7 +986,7 @@ class Processor:
         # Obtaim map for this file's commits to the corresponding file name.
         # The file name may differ due to renames.
         if file:
-            sha_to_file = self.file_commits(file)
+            file_shas = self.file_commits(file)
 
         # Create the longest path through all the repo's commits.
         # git-log | daglp
@@ -1017,19 +1010,24 @@ class Processor:
             raise ProcessingError(daglp.stderr.rstrip() or "daglp failed")
 
         commit_path = []
-        for line in daglp.stdout.splitlines():
-            parts = line.strip().split()
+        all_sha_lines = daglp.stdout.splitlines()
+        for line in all_sha_lines:
+            parts = line.split()
             sha, ts = parts[0], parts[1]
-            file_name = sha_to_file.get(sha, None) if file else None
-            if file and not file_name:
+            if file and sha not in file_shas:
                 continue
-            commit_path.append((sha, ts, file_name))
+            commit_path.append((sha, ts))
         self.git_hot_total_commits = len(commit_path)
 
-        prev_sha = None
-        prev_file_name = None
+        # If a file is specified start with a diff from the global first commit,
+        # unless the first commit is also the file's first commit.
+        first_sha = all_sha_lines[0].split()[0]
+        if file and first_sha != commit_path[0][0]:
+            prev_sha = first_sha
+        else:
+            prev_sha = None
 
-        for sha, ts, file_name in commit_path:
+        for sha, ts in commit_path:
 
             # Get the diff for this commit
             if prev_sha is None:
@@ -1045,7 +1043,7 @@ class Processor:
                         "--",
                     ]
                 if file:
-                    args.append(file_name)
+                    args.append(file)
             else:
                 # No --pretty commit header here, so construct it manually.
                 yield f"commit {sha} {ts}\n"
@@ -1061,7 +1059,7 @@ class Processor:
                         "--",
                     ]
                 if file:
-                    args += [file_name, prev_file_name]
+                    args += [file, file]
             diff = subprocess.Popen(
                 args,
                 stdout=subprocess.PIPE,
@@ -1076,8 +1074,6 @@ class Processor:
 
             diff.wait()
             prev_sha = sha
-            if file:
-                prev_file_name = file_name
 
     def process_commit_state(self):
         if self.hash is not None:
