@@ -19,21 +19,37 @@ The package installs two commands:
   through the Git commit DAG; [manual page](https://dspinellis.github.io/manview/?src=https%3A%2F%2Fraw.githubusercontent.com%2Fdspinellis%2Fgit-hot%2Frefs%2Fheads%2Fmaster%2Fdaglp.1&name=daglp&link=https%3A%2F%2Fgithub.com%2Fdspinellis%2Fgit-hot).
 
 
-## Installation
+## Command installation
 
-For an isolated command installation:
+### As an individual user
 
 ```sh
 uv tool install git-hot
 ```
+or
 
-For installation in an active virtual environment:
+```sh
+pipx install git-hot
+```
+
+or (discouraged legacy method)
+
+```sh
+pip install --user git-hot
+```
+
+### For all users
+
+```sh
+sudo pipx install --global git-hot
+```
+
+### In an active virtual environment
 
 ```sh
 uv pip install git-hot
 ```
 
-With `pip`:
 
 ```sh
 python -m pip install git-hot
@@ -146,7 +162,15 @@ Build a source distribution locally with:
 uv build --sdist
 ```
 
+Reinstall updated Python source code with:
+
+```sh
+pipx uninstall git-hot
+pipx install .
+```
+
 Platform wheels are built in CI through `cibuildwheel`.
+
 
 ## Research Tools
 
