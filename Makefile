@@ -13,7 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
+SHELL := /bin/bash
+LC_ALL := C
+
 RUSTFLAGS=-O
+LIFETIME=src/git_hot/lifetime.py
 
 all: daglp
 
@@ -22,14 +27,14 @@ daglp: ./src/git_hot/daglp.rs
 
 test-python: daglp
 	rm -rf code-lifetime-test code-lifetime-test-branch
-	(cd fixtures/code-lifetime-test.git/ ; ../../difflog.sh master) | ./lifetime.py -t 2>/dev/null | sort  | diff fixtures/tokens.out  -
-	(cd fixtures/code-lifetime-test.git/ ; ../../difflog.sh master) | ./lifetime.py -l 2>/dev/null | sort  | diff fixtures/line-contents.out  -
+	(cd fixtures/code-lifetime-test.git/ ; ../../difflog.sh master) | $(LIFETIME) -t 2>/dev/null | sort | diff <(sort fixtures/tokens.out)  -
+	(cd fixtures/code-lifetime-test.git/ ; ../../difflog.sh master) | $(LIFETIME) -l 2>/dev/null | sort | diff <(sort fixtures/line-contents.out)  -
 	git clone ./fixtures/code-lifetime-test.git
-	cd code-lifetime-test && ../difflog.sh master | python3 ../lifetime.py --color never -C ../churn
+	cd code-lifetime-test && ../difflog.sh master | python3 ../$(LIFETIME) --color never -C ../churn
 	diff -r fixtures/churn.ok/ churn/
 	git clone ./fixtures/code-lifetime-test-branch.git
 	./sync-test-branches.sh
-	TOOL='./lifetime.py --color never' ./runtest.sh
+	TOOL='$(LIFETIME) --color never' ./runtest.sh
 	GIT_DIR=fixtures/code-lifetime-test.git ./git-hot | diff - fixtures/metrics.out
 	rm -rf code-lifetime-test code-lifetime-test-branch diff.diff \
 	commit-tree.txt commit-daglp.txt RECONSTRUCTION growth.txt churn
