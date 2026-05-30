@@ -1047,8 +1047,8 @@ class Processor:
                         "git",
                         "-c", "diff.renameLimit=30000",
                         "diff",
-                        "-m", "-M", "-C", "-U0",
-                        f"{prev_sha}..{sha}",
+                        "-M", "-C", "-U0",
+                        prev_sha, sha,
                         "--",
                     ]
                 if file:
