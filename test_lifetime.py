@@ -488,6 +488,26 @@ class GitHotOutputTests(unittest.TestCase):
         self.assertTrue(pager_out.closed)
         self.assertTrue(pager_proc.wait_called)
 
+    def test_git_hot_waits_for_pager_when_close_sees_broken_pipe(self):
+        args = parse_main_args(["-q", "HEAD"], prog="git-hot")
+
+        class BrokenPipeOutput(io.StringIO):
+            def close(self):
+                raise BrokenPipeError
+
+        class PagerProc:
+            def __init__(self):
+                self.wait_called = False
+
+            def wait(self):
+                self.wait_called = True
+
+        pager_proc = PagerProc()
+        self.TestProcessor.diff_stream = TEST_DIFF_STREAM
+        with patch("lifetime.get_paged_output", return_value=(BrokenPipeOutput(), pager_proc)):
+            self.TestProcessor(args).run()
+        self.assertTrue(pager_proc.wait_called)
+
     def test_git_hot_reports_git_log_errors_before_running_daglp(self):
         args = parse_main_args(["-q", "HEAD"], prog="git-hot")
         completed = subprocess.CompletedProcess(
@@ -534,6 +554,32 @@ class GitHotOutputTests(unittest.TestCase):
             "name 'missing_name' is not defined\n",
             stderr.getvalue(),
         )
+
+    def test_main_handles_broken_pipe_quietly(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("lifetime.parse_main_args", return_value=object()), patch(
+            "lifetime.Processor"
+        ) as processor_class, patch("lifetime.silence_broken_pipe_at_shutdown"), redirect_stdout(
+            stdout
+        ), redirect_stderr(stderr):
+            processor_class.return_value.run.side_effect = BrokenPipeError
+            exit_code = main([])
+        self.assertEqual(141, exit_code)
+        self.assertEqual("", stdout.getvalue())
+        self.assertEqual("", stderr.getvalue())
+
+    def test_main_handles_keyboard_interrupt_quietly(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("lifetime.parse_main_args", return_value=object()), patch(
+            "lifetime.Processor"
+        ) as processor_class, redirect_stdout(stdout), redirect_stderr(stderr):
+            processor_class.return_value.run.side_effect = KeyboardInterrupt
+            exit_code = main([])
+        self.assertEqual(130, exit_code)
+        self.assertEqual("", stdout.getvalue())
+        self.assertEqual("", stderr.getvalue())
 
 
 if __name__ == "__main__":

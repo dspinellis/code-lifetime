@@ -732,6 +732,18 @@ def get_paged_output(use_color=False):
     return p.stdin, p
 
 
+def silence_broken_pipe_at_shutdown():
+    """Prevent Python from reporting another broken pipe while flushing stdout."""
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(devnull, sys.stdout.fileno())
+        finally:
+            os.close(devnull)
+    except Exception:
+        pass
+
+
 class Processor:
     def __init__(self, args):
         self.args = args
@@ -956,8 +968,12 @@ class Processor:
             if self.growth_file is not None:
                 self.growth_file.close()
             if self.pager_proc:
-                self.out.close()
-                self.pager_proc.wait()
+                try:
+                    self.out.close()
+                except BrokenPipeError:
+                    pass
+                finally:
+                    self.pager_proc.wait()
 
     def file_commits(self, file: str) -> Set[str]:
         """Return a set of commit SHAs touching the specified file name."""
@@ -1866,6 +1882,11 @@ def main(argv=None):
         return 0
     except SystemExit as exc:
         return int(exc.code)
+    except KeyboardInterrupt:
+        return 130
+    except BrokenPipeError:
+        silence_broken_pipe_at_shutdown()
+        return 141
     except ProcessingError as exc:
         print_stderr_line(f"Error: {exc}")
         return 1
