@@ -1036,7 +1036,7 @@ class Processor:
                         "--",
                     ]
                 if file:
-                    args += file_name
+                    args.append(file_name)
             else:
                 # No --pretty commit header here, so construct it manually.
                 yield f"commit {sha} {ts}\n"
